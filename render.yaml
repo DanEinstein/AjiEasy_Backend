@@ -1,0 +1,28 @@
+services:
+  - type: web
+    name: ajieasy-backend
+    env: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    startCommand: uvicorn main:app --host 0.0.0.0 --port $PORT
+    envVars:
+      - key: DATABASE_URL
+        fromDatabase:
+          name: ajieasy-db
+          property: connectionString
+      - key: SECRET_KEY
+        generateValue: true
+      - key: GEMINI_API_KEY
+        value: SET_IN_RENDER_DASHBOARD # ← Placeholder
+      - key: GROQ_API_KEY
+        value: SET_IN_RENDER_DASHBOARD # ← Placeholder
+      - key: OPENROUTER_API_KEY
+        value: SET_IN_RENDER_DASHBOARD # ← Placeholder
+      - key: FRONTEND_URL
+        value: https://ajieasy.vercel.app
+
+databases:
+  - name: ajieasy-db
+    plan: free
+    databaseName: ajieasy
+    user: ajieasy_user

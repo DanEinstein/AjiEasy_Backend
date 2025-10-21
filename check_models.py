@@ -1,43 +1,51 @@
-import os
 import google.generativeai as genai
+import os
+from dotenv import load_dotenv
 
-print("Attempting to list available models...")
+load_dotenv()
 
-try:
-    # 1. Configure your API key
-    genai.configure(api_key=os.environ["GEMINI_API_KEY"])
-except KeyError:
-    print("-" * 30)
-    print("ERROR: GEMINI_API_KEY environment variable not set.")
-    print("Please set the key before running this script:")
-    print("(venv) > set GEMINI_API_KEY=your_api_key_here")
-    print("-" * 30)
-    exit()
-except Exception as e:
-    print(f"An error occurred during configuration: {e}")
-    exit()
+# Configure with your API key
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
 
-print("API key configured.")
-print("Fetching models...\n")
+def list_available_models():
+    print("🔍 Checking available Gemini models...")
+    
+    try:
+        # List all available models
+        models = genai.list_models()
+        
+        print("\n📋 AVAILABLE MODELS:")
+        print("=" * 60)
+        
+        gemini_models = []
+        for model in models:
+            if 'gemini' in model.name.lower():
+                gemini_models.append(model)
+                print(f"🔹 {model.name}")
+                print(f"   - Supported Methods: {', '.join(model.supported_generation_methods)}")
+                print(f"   - Description: {model.description}")
+                print()
+        
+        print(f"🎯 Total Gemini models found: {len(gemini_models)}")
+        
+        # Show recommended models for your use case
+        print("\n💡 RECOMMENDED MODELS FOR INTERVIEW QUESTIONS:")
+        recommended = [
+            'gemini-1.5-flash-latest',
+            'gemini-1.5-pro-latest', 
+            'gemini-2.0-flash-exp',
+            'gemini-2.0-flash-thinking-exp-1219',
+            'gemini-2.0-pro-exp-02-05'
+        ]
+        
+        for model_name in recommended:
+            if any(model_name in model.name for model in gemini_models):
+                print(f"✅ {model_name} - AVAILABLE")
+            else:
+                print(f"❌ {model_name} - NOT AVAILABLE")
+                
+    except Exception as e:
+        print(f"❌ Error listing models: {e}")
 
-# 2. List all models and find the ones that can generate content
-try:
-    usable_models = []
-    for m in genai.list_models():
-        if 'generateContent' in m.supported_generation_methods:
-            usable_models.append(m.name)
-
-    if not usable_models:
-        print("No usable models found for 'generateContent'.")
-        print("Please check your API key permissions in Google AI Studio.")
-    else:
-        print("--- Usable Models for 'generateContent' ---")
-        for model_name in usable_models:
-            print(f"> {model_name}")
-        print("---------------------------------------------")
-        print("\nSUCCESS: Copy one of the model names above (e.g., 'models/gemini-pro')")
-        print("and paste it into your ai_service.py file.")
-
-except Exception as e:
-    print(f"An error occurred while listing models: {e}")
-    print("This may be an API key issue or a network problem.")
+if __name__ == "__main__":
+    list_available_models()
