@@ -26,17 +26,25 @@ class Database:
     
     # Determine database type and configure engine accordingly
     if "postgresql" in settings.DATABASE_URL.lower():
-        # PostgreSQL configuration for Render
+        # PostgreSQL configuration for Render with asyncpg
+        # Replace postgresql:// with postgresql+asyncpg://
+        async_db_url = settings.DATABASE_URL.replace(
+            "postgresql://", 
+            "postgresql+asyncpg://", 
+            1
+        )
         engine = create_engine(
-            settings.DATABASE_URL,
+            async_db_url,
             pool_pre_ping=True,  # Verify connection before using
             pool_recycle=300,    # Recycle connections after 5 minutes
             connect_args={
-                "sslmode": "require",  # Require SSL for security
-                "connect_timeout": 10  # Connection timeout
+                "ssl": "require",  # Require SSL for security
+                "server_settings": {
+                    "connect_timeout": "10"  # Connection timeout
+                }
             }
         )
-        logger.info("Configured for PostgreSQL database")
+        logger.info("Configured for PostgreSQL database with asyncpg")
     else:
         # SQLite configuration for local development
         engine = create_engine(
