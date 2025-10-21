@@ -13,10 +13,8 @@ from sqlalchemy.orm import sessionmaker
 import os
 import logging
 
-# Import the settings from your new config.py file
 from config import settings
 
-# Setup logging
 logger = logging.getLogger(__name__)
 
 class Database:
@@ -24,49 +22,32 @@ class Database:
     Database class encapsulates SQLAlchemy engine, session, and model definitions.
     """
     
-    # Determine database type and configure engine accordingly
-    if "postgresql" in settings.DATABASE_URL.lower():
-        # PostgreSQL configuration for Render with asyncpg
-        # Replace postgresql:// with postgresql+asyncpg://
-        async_db_url = settings.DATABASE_URL.replace(
-            "postgresql://", 
-            "postgresql+asyncpg://", 
-            1
-        )
-        engine = create_engine(
-            async_db_url,
-            pool_pre_ping=True,  # Verify connection before using
-            pool_recycle=300,    # Recycle connections after 5 minutes
-            connect_args={
-                "ssl": "require",  # Require SSL for security
-                "server_settings": {
-                    "connect_timeout": "10"  # Connection timeout
-                }
-            }
-        )
-        logger.info("Configured for PostgreSQL database with asyncpg")
-    else:
-        # SQLite configuration for local development
-        engine = create_engine(
-            settings.DATABASE_URL,
-            connect_args={"check_same_thread": False}
-        )
-        logger.info("Configured for SQLite database")
+    # Use regular PostgreSQL driver (not asyncpg)
+    engine = create_engine(
+        settings.DATABASE_URL,  # Keep as postgresql:// not postgresql+asyncpg://
+        pool_pre_ping=True,
+        pool_recycle=300,
+        connect_args={
+            "sslmode": "require",  # Changed from "ssl" to "sslmode"
+        }
+    )
+    logger.info("Configured for PostgreSQL database with psycopg2")
     
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 
+    # Your existing User and AiService classes remain the same
     class User(Base):
         __tablename__ = "users"
 
         id = Column(Integer, primary_key=True, index=True)
-        name = Column(String(100), index=True, nullable=False)  # Added length limit for PostgreSQL
-        email = Column(String(255), unique=True, index=True, nullable=False)  # Added length limit
-        hashed_password = Column(String(255), nullable=False)  # Added length limit
+        name = Column(String(100), index=True, nullable=False)
+        email = Column(String(255), unique=True, index=True, nullable=False)
+        hashed_password = Column(String(255), nullable=False)
         is_active = Column(Boolean, default=True)
-        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # Fixed timezone
+        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
         updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), 
-                          onupdate=lambda: datetime.now(timezone.utc))  # Fixed timezone
+                          onupdate=lambda: datetime.now(timezone.utc))
 
         def __repr__(self):
             return f"User(id={self.id}, email={self.email}, is_active={self.is_active})"
@@ -75,22 +56,19 @@ class Database:
         __tablename__ = "ai_services"
 
         id = Column(Integer, primary_key=True, index=True)
-        name = Column(String(100), index=True, nullable=False)  # Added length limit
-        description = Column(Text)  # Changed to Text for longer descriptions
+        name = Column(String(100), index=True, nullable=False)
+        description = Column(Text)
         is_active = Column(Boolean, default=True)
-        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))  # Fixed timezone
+        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
         updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                          onupdate=lambda: datetime.now(timezone.utc))  # Fixed timezone
+                          onupdate=lambda: datetime.now(timezone.utc))
 
         def __repr__(self):
             return f"AiService(id={self.id}, name={self.name}, is_active={self.is_active})"
 
+    # Your existing get_db, create_tables, test_connection, get_database_info methods remain the same
     @staticmethod
     def get_db():
-        """
-        Generator that yields a new session and ensures it gets closed.
-        Used as a FastAPI dependency.
-        """
         db = Database.SessionLocal()
         try:
             yield db
@@ -105,27 +83,17 @@ class Database:
 
     @staticmethod
     def create_tables():
-        """
-        Creates all tables in the database.
-        Handles both development and production environments.
-        """
         try:
             Database.Base.metadata.create_all(bind=Database.engine)
             logger.info("Database tables created successfully")
-            
-            # Log table information
             tables = Database.Base.metadata.tables.keys()
             logger.info(f"Available tables: {list(tables)}")
-            
         except Exception as e:
             logger.error(f"Error creating database tables: {e}")
             raise
 
     @staticmethod
     def test_connection():
-        """
-        Test database connection - useful for health checks
-        """
         try:
             with Database.engine.connect() as conn:
                 result = conn.execute("SELECT 1")
@@ -137,12 +105,8 @@ class Database:
 
     @staticmethod
     def get_database_info():
-        """
-        Get database information for debugging and monitoring
-        """
         try:
             with Database.engine.connect() as conn:
-                # Try to get database version
                 if "postgresql" in settings.DATABASE_URL.lower():
                     result = conn.execute("SELECT version();")
                     db_version = result.scalar()
@@ -161,5 +125,4 @@ class Database:
             logger.error(f"Error getting database info: {e}")
             return {"error": str(e)}
 
-# Initialize database on import
 logger.info("Database module initialized")
