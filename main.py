@@ -32,7 +32,7 @@ app.add_middleware(
         "http://127.0.0.1:8080",
         "https://daneinstein.github.io",  # GitHub Pages
         "https://*.github.io",            # All GitHub Pages subdomains
-        "https://ajieasy.vercel.app",     # Your Vercel domain
+        "https://aji-easy-frontend.vercel.app",     # Your Vercel domain
         "https://*.vercel.app",           # All Vercel subdomains
     ],
     allow_credentials=True,
