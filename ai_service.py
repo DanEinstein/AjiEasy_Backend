@@ -14,25 +14,25 @@ def initialize_gemini():
         if not settings.GEMINI_API_KEY:
             print("⚠️ Gemini API key not found")
             return None, False
-        
+
         genai.configure(api_key=settings.GEMINI_API_KEY)
-        
+
         # Model priority based on stability
         working_models = [
-            'models/gemini-2.0-flash',        # ✅ This works for you
-            'models/gemini-2.0-flash-001',    # Stable version
-            'models/gemini-flash-latest',     # Generic fallback
-            'models/gemini-pro-latest',       # Pro fallback
-        ]
-        
+    'models/gemini-2.5-flash',        # ✅ Primary replacement
+    'models/gemini-2.5-flash-lite',   # Fast & affordable
+    'models/gemini-2.5-pro',          # Highest capability
+    'models/gemini-2.0-flash',        # Fallback (until Nov 2025)
+    ]
+
         gemini_model = None
         selected_model = None
-        
+
         for model_name in working_models:
             try:
                 print(f"🔄 Testing model: {model_name}")
                 model = genai.GenerativeModel(model_name)
-                
+
                 # Enhanced test that handles different response formats
                 test_response = model.generate_content(
                     "Respond with exactly: READY",
@@ -41,7 +41,7 @@ def initialize_gemini():
                         max_output_tokens=10,
                     )
                 )
-                
+
                 # Handle different response formats safely
                 if hasattr(test_response, 'text') and test_response.text:
                     if 'READY' in test_response.text.upper():
@@ -63,19 +63,19 @@ def initialize_gemini():
                                     break
                     except:
                         continue
-                    
+
             except Exception as e:
                 error_msg = str(e)
                 print(f"❌ Model {model_name} failed: {error_msg[:80]}...")
                 continue
-        
+
         if gemini_model:
             print(f"🎯 Using Gemini model: {selected_model}")
             return gemini_model, True
         else:
             print("❌ No Gemini models available, using local fallback only")
             return None, False
-            
+
     except Exception as e:
         print(f"❌ Gemini initialization failed: {e}")
         return None, False
@@ -89,12 +89,12 @@ class FreeAIService:
         self.openrouter_enabled = bool(settings.OPENROUTER_API_KEY)
         self.groq_enabled = bool(getattr(settings, 'GROQ_API_KEY', None))
         print(f"✅ Free AI Services: DeepSeek={self.deepseek_enabled}, OpenRouter={self.openrouter_enabled}, Groq={self.groq_enabled}")
-        
+
     async def generate_quiz(
-        self, 
-        topic: str, 
-        difficulty: str = "medium", 
-        question_count: int = 10, 
+        self,
+        topic: str,
+        difficulty: str = "medium",
+        question_count: int = 10,
         focus_areas: str = ""
     ) -> Dict:
         """
@@ -102,12 +102,12 @@ class FreeAIService:
         """
         if not settings.ENABLE_QUIZ:
             return {"error": "Quiz feature is disabled"}
-        
+
         # Validate question count
         question_count = min(question_count, settings.MAX_QUIZ_QUESTIONS)
-        
+
         print(f"🎯 Starting quiz generation for: {topic}")
-        
+
         # Try Groq first (FREE & FAST)
         if self.groq_enabled:
             print("🔄 Trying Groq (Free)...")
@@ -117,7 +117,7 @@ class FreeAIService:
                 return quiz_data
             else:
                 print(f"❌ Groq failed: {quiz_data.get('error', 'Unknown error')}")
-        
+
         # Try OpenRouter second
         if self.openrouter_enabled:
             print("🔄 Trying OpenRouter...")
@@ -127,7 +127,7 @@ class FreeAIService:
                 return quiz_data
             else:
                 print(f"❌ OpenRouter failed: {quiz_data.get('error', 'Unknown error')}")
-        
+
         # Try DeepSeek last (might work if billing is set up)
         if self.deepseek_enabled:
             print("🔄 Trying DeepSeek...")
@@ -137,16 +137,16 @@ class FreeAIService:
                 return quiz_data
             else:
                 print(f"❌ DeepSeek failed: {quiz_data.get('error', 'Unknown error')}")
-        
+
         # Final fallback - Enhanced local quiz
         print("🔄 Using enhanced local quiz generator...")
         return self._generate_enhanced_local_quiz(topic, difficulty, question_count, focus_areas)
 
     async def _generate_groq_quiz(
-        self, 
-        topic: str, 
-        difficulty: str, 
-        question_count: int, 
+        self,
+        topic: str,
+        difficulty: str,
+        question_count: int,
         focus_areas: str
     ) -> Dict:
         """
@@ -155,7 +155,7 @@ class FreeAIService:
         prompt = f"""
         Create {question_count} multiple-choice interview questions about "{topic}" at {difficulty} difficulty level.
         {f"Focus areas: {focus_areas}" if focus_areas else ""}
-        
+
         Return ONLY valid JSON array with this exact structure:
         [
             {{
@@ -169,14 +169,14 @@ class FreeAIService:
                 "difficulty": "easy/medium/hard"
             }}
         ]
-        
+
         Make questions practical, interview-focused, and relevant to the topic.
         Include a mix of question types appropriate for the topic.
         """
-        
+
         try:
             print(f"🔍 Attempting Groq quiz generation for: {topic}")
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     "https://api.groq.com/openai/v1/chat/completions",
@@ -192,15 +192,15 @@ class FreeAIService:
                     },
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
-                    
+
                     print(f"📡 Groq Response Status: {response.status}")
-                    
+
                     if response.status == 200:
                         data = await response.json()
                         content = data["choices"][0]["message"]["content"]
-                        
+
                         print(f"📝 Raw Groq Response: {content[:200]}...")
-                        
+
                         # Extract JSON from response
                         json_match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
                         if json_match:
@@ -220,7 +220,7 @@ class FreeAIService:
                         else:
                             print("❌ No JSON array found in Groq response")
                             return {"error": "No valid JSON in Groq response"}
-                    
+
                     elif response.status == 401:
                         print("❌ Groq: Invalid API key")
                         return {"error": "Groq API key invalid"}
@@ -231,7 +231,7 @@ class FreeAIService:
                         error_text = await response.text()
                         print(f"❌ Groq API error {response.status}: {error_text}")
                         return {"error": f"Groq API error: {response.status}"}
-                        
+
         except asyncio.TimeoutError:
             print("❌ Groq: Request timeout")
             return {"error": "Groq API timeout"}
@@ -240,10 +240,10 @@ class FreeAIService:
             return {"error": f"Groq error: {str(e)}"}
 
     async def _generate_deepseek_quiz(
-        self, 
-        topic: str, 
-        difficulty: str, 
-        question_count: int, 
+        self,
+        topic: str,
+        difficulty: str,
+        question_count: int,
         focus_areas: str
     ) -> Dict:
         """
@@ -252,7 +252,7 @@ class FreeAIService:
         prompt = f"""
         Create {question_count} multiple-choice interview questions about {topic} at {difficulty} difficulty.
         {f"Focus on: {focus_areas}" if focus_areas else ""}
-        
+
         Return ONLY valid JSON array with this exact structure:
         [
             {{
@@ -266,13 +266,13 @@ class FreeAIService:
                 "difficulty": "{difficulty}"
             }}
         ]
-        
+
         Make questions practical for job interviews. Include variety.
         """
-        
+
         try:
             print(f"🔍 Attempting DeepSeek quiz generation for: {topic}")
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     "https://api.deepseek.com/v1/chat/completions",
@@ -288,15 +288,15 @@ class FreeAIService:
                     },
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
-                    
+
                     print(f"📡 DeepSeek Response Status: {response.status}")
-                    
+
                     if response.status == 200:
                         data = await response.json()
                         content = data["choices"][0]["message"]["content"]
-                        
+
                         print(f"📝 Raw DeepSeek Response: {content[:200]}...")
-                        
+
                         # Extract JSON from response
                         json_match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
                         if json_match:
@@ -316,7 +316,7 @@ class FreeAIService:
                         else:
                             print("❌ No JSON array found in DeepSeek response")
                             return {"error": "No valid JSON in DeepSeek response"}
-                    
+
                     elif response.status == 401:
                         print("❌ DeepSeek: Invalid API key")
                         return {"error": "DeepSeek API key invalid"}
@@ -330,7 +330,7 @@ class FreeAIService:
                         error_text = await response.text()
                         print(f"❌ DeepSeek API error {response.status}: {error_text}")
                         return {"error": f"DeepSeek API error: {response.status}"}
-                        
+
         except asyncio.TimeoutError:
             print("❌ DeepSeek: Request timeout")
             return {"error": "DeepSeek API timeout"}
@@ -339,10 +339,10 @@ class FreeAIService:
             return {"error": f"DeepSeek error: {str(e)}"}
 
     async def _generate_openrouter_quiz(
-        self, 
-        topic: str, 
-        difficulty: str, 
-        question_count: int, 
+        self,
+        topic: str,
+        difficulty: str,
+        question_count: int,
         focus_areas: str
     ) -> Dict:
         """
@@ -351,14 +351,14 @@ class FreeAIService:
         prompt = f"""
         Create {question_count} interview quiz questions about {topic}, difficulty: {difficulty}.
         {f'Focus areas: {focus_areas}' if focus_areas else ''}
-        
+
         Return JSON array with: question, options, correctAnswer, explanation, hint, type, difficulty.
         Make questions practical for job interviews.
         """
-        
+
         try:
             print(f"🔍 Attempting OpenRouter quiz generation for: {topic}")
-            
+
             async with aiohttp.ClientSession() as session:
                 async with session.post(
                     "https://openrouter.ai/api/v1/chat/completions",
@@ -376,15 +376,15 @@ class FreeAIService:
                     },
                     timeout=aiohttp.ClientTimeout(total=30)
                 ) as response:
-                    
+
                     print(f"📡 OpenRouter Response Status: {response.status}")
-                    
+
                     if response.status == 200:
                         data = await response.json()
                         content = data["choices"][0]["message"]["content"]
-                        
+
                         print(f"📝 Raw OpenRouter Response: {content[:200]}...")
-                        
+
                         json_match = re.search(r'\[\s*\{.*\}\s*\]', content, re.DOTALL)
                         if json_match:
                             try:
@@ -403,7 +403,7 @@ class FreeAIService:
                         else:
                             print("❌ No JSON array found in OpenRouter response")
                             return {"error": "No valid JSON in OpenRouter response"}
-                    
+
                     elif response.status == 401:
                         print("❌ OpenRouter: Invalid API key")
                         return {"error": "OpenRouter API key invalid"}
@@ -414,7 +414,7 @@ class FreeAIService:
                         error_text = await response.text()
                         print(f"❌ OpenRouter API error {response.status}: {error_text}")
                         return {"error": f"OpenRouter API error: {response.status}"}
-                        
+
         except asyncio.TimeoutError:
             print("❌ OpenRouter: Request timeout")
             return {"error": "OpenRouter API timeout"}
@@ -423,26 +423,26 @@ class FreeAIService:
             return {"error": f"OpenRouter error: {str(e)}"}
 
     def _generate_enhanced_local_quiz(
-        self, 
-        topic: str, 
-        difficulty: str, 
-        question_count: int, 
+        self,
+        topic: str,
+        difficulty: str,
+        question_count: int,
         focus_areas: str
     ) -> Dict:
         """
         Enhanced local quiz generator with better questions
         """
         questions = []
-        
+
         # Difficulty-based question templates
         difficulty_modifiers = {
             "easy": ["basic", "fundamental", "essential", "core"],
             "medium": ["advanced", "complex", "practical", "real-world"],
             "hard": ["expert", "optimization", "scalability", "architecture"]
         }
-        
+
         mod = difficulty_modifiers.get(difficulty, difficulty_modifiers["medium"])
-        
+
         question_templates = {
             "technical": [
                 f"What is a {mod[0]} concept in {topic} that every professional should know?",
@@ -466,19 +466,19 @@ class FreeAIService:
                 f"Describe your approach to mentoring someone new to {topic} development."
             ]
         }
-        
+
         for i in range(1, question_count + 1):
             # Smart distribution of question types
             if i % 3 == 1:
                 q_type = "technical"
             elif i % 3 == 2:
-                q_type = "behavioral" 
+                q_type = "behavioral"
             else:
                 q_type = "situational"
-            
+
             templates = question_templates[q_type]
             question_text = templates[i % len(templates)]
-            
+
             # Context-aware options based on difficulty
             if difficulty == "easy":
                 options = [
@@ -501,13 +501,13 @@ class FreeAIService:
                     f"Apply academic approaches without considering real-world constraints",
                     f"Wait for more requirements before proceeding"
                 ]
-            
+
             explanations = {
                 "technical": f"This assesses your understanding of {topic} {q_type} concepts at {difficulty} level.",
                 "behavioral": f"Evaluates your experience and approach to {topic}-related challenges.",
                 "situational": f"Tests your problem-solving skills in {topic} scenarios."
             }
-            
+
             questions.append({
                 "id": i,
                 "question": question_text,
@@ -518,7 +518,7 @@ class FreeAIService:
                 "type": q_type,
                 "difficulty": difficulty
             })
-        
+
         print(f"✅ Generated {len(questions)} enhanced local quiz questions")
         return {
             "topic": topic,
@@ -534,18 +534,18 @@ class FreeAIService:
         """
         if not settings.ENABLE_CHAT:
             return "Chat feature is currently disabled."
-        
+
         prompt = f"""
         You are AjiEasy AI, a professional interview coach and career advisor.
-        
+
         Context: User wants to discuss: {topic}
         User's message: {message}
-        
+
         Provide helpful, professional advice about interview preparation, career development, or technical topics.
         Be concise but comprehensive, and focus on practical, actionable advice.
         Keep your response under 500 words.
         """
-        
+
         # Try DeepSeek first
         if self.deepseek_enabled:
             try:
@@ -564,14 +564,14 @@ class FreeAIService:
                         },
                         timeout=aiohttp.ClientTimeout(total=settings.API_TIMEOUT/1000)
                     ) as response:
-                        
+
                         if response.status == 200:
                             data = await response.json()
                             return data["choices"][0]["message"]["content"]
-                            
+
             except Exception as e:
                 print(f"DeepSeek chat error: {e}")
-        
+
         # Try OpenRouter as fallback
         if self.openrouter_enabled:
             try:
@@ -592,14 +592,14 @@ class FreeAIService:
                         },
                         timeout=aiohttp.ClientTimeout(total=settings.API_TIMEOUT/1000)
                     ) as response:
-                        
+
                         if response.status == 200:
                             data = await response.json()
                             return data["choices"][0]["message"]["content"]
-                            
+
             except Exception as e:
                 print(f"OpenRouter chat error: {e}")
-        
+
         # ========== IMPROVED LOCAL FALLBACK ==========
         # More conversational and personalized responses
         if "interview" in message.lower() or "prepare" in message.lower() or "preparation" in message.lower():
@@ -647,7 +647,7 @@ Based on your interest in "{message}", here are some strategic steps:
 
 **1. Skill Building:**
 - Master core {topic} fundamentals
-- Learn relevant tools and technologies  
+- Learn relevant tools and technologies
 - Build practical projects to demonstrate expertise
 
 **2. Networking & Visibility:**
@@ -670,7 +670,7 @@ Based on your interest in "{message}", here are some strategic steps:
 - Research companies that value {topic} expertise
 - Practice explaining your {topic} journey clearly
 
-The {topic} field is constantly evolving - your curiosity and adaptability will be your greatest assets! 
+The {topic} field is constantly evolving - your curiosity and adaptability will be your greatest assets!
 
 What specific aspect of your {topic} career journey would you like to explore further?"""
 
@@ -723,41 +723,41 @@ async def generate_questions_async(
         if not GEMINI_ENABLED:
             print("⚠️ Gemini not available, using local fallback")
             return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
-        
+
         # Optimized prompt for Gemini 2.0 Flash
         prompt = f"""
         Generate 8 professional interview questions for:
         TOPIC: {topic}
-        JOB ROLE: {job_description} 
+        JOB ROLE: {job_description}
         INTERVIEW TYPE: {interview_type}
         COMPANY TYPE: {company_nature}
-        
+
         Create a mix of:
         - 3 Technical questions (specific {topic} knowledge)
-        - 3 Behavioral questions (experience and soft skills)  
+        - 3 Behavioral questions (experience and soft skills)
         - 2 Situational questions (problem-solving scenarios)
-        
+
         For each question, provide:
         - question: The interview question text
         - type: technical/behavioral/situational
         - difficulty: easy/medium/hard
         - explanation: Brief description of what this assesses
-        
+
         Return ONLY a valid JSON array with this exact structure:
         [
             {{
                 "question": "Question text?",
                 "type": "technical",
-                "difficulty": "medium", 
+                "difficulty": "medium",
                 "explanation": "What this question evaluates..."
             }}
         ]
-        
+
         Make questions practical, job-relevant, and tailored to {company_nature} companies.
         """
-        
+
         print(f"🔮 Generating questions with Gemini 2.0 Flash for: {topic}")
-        
+
         try:
             response = gemini_model.generate_content(
                 prompt,
@@ -767,7 +767,7 @@ async def generate_questions_async(
                     max_output_tokens=3000,
                 )
             )
-            
+
             # Enhanced response handling
             response_text = ""
             if hasattr(response, 'text') and response.text:
@@ -781,10 +781,10 @@ async def generate_questions_async(
                             response_text = candidate.content.parts[0].text
                 except:
                     pass
-            
+
             if not response_text:
                 raise Exception("Empty response from Gemini")
-            
+
             # Extract JSON from response
             json_match = re.search(r'\[\s*\{.*\}\s*\]', response_text, re.DOTALL)
             if json_match:
@@ -794,11 +794,11 @@ async def generate_questions_async(
             else:
                 print("❌ No JSON found in response, using fallback")
                 return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
-                
+
         except Exception as e:
             print(f"❌ Gemini generation error: {e}")
             return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
-            
+
     except Exception as e:
         print(f"❌ Overall Gemini error: {e}")
         return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
@@ -837,17 +837,17 @@ async def generate_local_fallback_questions(topic: str, job_description: str, in
             q_type = "behavioral"
         else:
             q_type = "situational"
-        
+
         templates = question_templates[q_type]
         question_text = templates[i % len(templates)]
-        
+
         questions.append({
             "question": question_text,
             "type": q_type,
             "difficulty": "medium",
             "explanation": f"This {q_type} question assesses your {topic} knowledge in {job_description.lower()} contexts."
         })
-    
+
     print(f"✅ Generated {len(questions)} questions using local fallback")
     return questions
 
