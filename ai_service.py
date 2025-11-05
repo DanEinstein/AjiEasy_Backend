@@ -19,11 +19,11 @@ def initialize_gemini():
 
         # Model priority based on stability
         working_models = [
-    'models/gemini-2.5-flash',        # ✅ Primary replacement
-    'models/gemini-2.5-flash-lite',   # Fast & affordable
-    'models/gemini-2.5-pro',          # Highest capability
-    'models/gemini-2.0-flash',        # Fallback (until Nov 2025)
-    ]
+            'models/gemini-2.5-flash',        # ✅ Primary replacement
+            'models/gemini-2.5-flash-lite',   # Fast & affordable
+            'models/gemini-2.5-pro',          # Highest capability
+            'models/gemini-2.0-flash',        # Fallback (until Nov 2025)
+        ]
 
         gemini_model = None
         selected_model = None
@@ -709,7 +709,7 @@ I'm excited to help you succeed! 🎉"""
 # Create a global instance
 free_ai_service = FreeAIService()
 
-# ==================== OPTIMIZED GEMINI 2.0 FLASH QUESTION GENERATION ====================
+# ==================== OPTIMIZED GEMINI 2.5 FLASH QUESTION GENERATION ====================
 async def generate_questions_async(
     topic: str,
     job_description: str,
@@ -717,14 +717,14 @@ async def generate_questions_async(
     company_nature: str
 ) -> List[Dict]:
     """
-    Generate interview questions using Gemini 2.0 Flash
+    Generate interview questions using Gemini 2.5 Flash
     """
     try:
         if not GEMINI_ENABLED:
             print("⚠️ Gemini not available, using local fallback")
             return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
 
-        # Optimized prompt for Gemini 2.0 Flash
+        # Optimized prompt for Gemini 2.5 Flash
         prompt = f"""
         Generate 8 professional interview questions for:
         TOPIC: {topic}
@@ -756,7 +756,7 @@ async def generate_questions_async(
         Make questions practical, job-relevant, and tailored to {company_nature} companies.
         """
 
-        print(f"🔮 Generating questions with Gemini 2.0 Flash for: {topic}")
+        print(f"🔮 Generating questions with Gemini 2.5 Flash for: {topic}")
 
         try:
             response = gemini_model.generate_content(
@@ -789,7 +789,7 @@ async def generate_questions_async(
             json_match = re.search(r'\[\s*\{.*\}\s*\]', response_text, re.DOTALL)
             if json_match:
                 questions = json.loads(json_match.group(0))
-                print(f"✅ Generated {len(questions)} questions with Gemini 2.0 Flash")
+                print(f"✅ Generated {len(questions)} questions with Gemini 2.5 Flash")
                 return questions
             else:
                 print("❌ No JSON found in response, using fallback")
