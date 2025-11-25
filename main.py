@@ -253,7 +253,7 @@ async def chat_with_ai(
 ):
     logger.info("User %s opened chat for %s", current_user.email, request.topic)
     try:
-        response = await send_chat_message(topic=request.topic, message=request.message)
+        response = await send_chat_message(topic=request.topic, message=request.message, history=request.history)
         return ChatResponse(response=response)
     except Exception:
         logger.exception("Chat generation failed for %s", current_user.email)

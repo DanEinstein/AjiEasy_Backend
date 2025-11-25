@@ -149,11 +149,11 @@ class FreeAIService:
     async def generate_topic_recommendations(self) -> List[Dict]:
         """Generate trending interview topics for 2025 using Gemini"""
         fallback_topics = [
-            {"topic": "AI Agents & LLMs", "trend": "High Demand", "icon": "fa-robot"},
-            {"topic": "Rust Programming", "trend": "Growing Fast", "icon": "fa-cogs"},
-            {"topic": "Cloud Security", "trend": "Critical", "icon": "fa-shield-alt"},
-            {"topic": "React Server Components", "trend": "Standard", "icon": "fa-code"},
-            {"topic": "System Design (Scalability)", "trend": "Evergreen", "icon": "fa-sitemap"}
+            {"topic": "AI Agents & LLMs", "trend": "High Demand", "icon": "fa-robot", "color": "#FF6B6B"},
+            {"topic": "Rust Programming", "trend": "Growing Fast", "icon": "fa-cogs", "color": "#4ECDC4"},
+            {"topic": "Cloud Security", "trend": "Critical", "icon": "fa-shield-alt", "color": "#45B7D1"},
+            {"topic": "React Server Components", "trend": "Standard", "icon": "fa-code", "color": "#96CEB4"},
+            {"topic": "System Design (Scalability)", "trend": "Evergreen", "icon": "fa-sitemap", "color": "#FFEEAD"}
         ]
 
         model, available = get_gemini_model()
@@ -463,6 +463,8 @@ Return ONLY a valid JSON object with this structure:
             "performance_trend": [60, 65, 70, 72, 75, 78, 80],
             "topic_mastery": {"General": 70},
             "average_score": 70,
+            "total_questions_attempted": 0,
+            "streak_days": 0,
             "recommendations": ["Keep practicing to improve your score.", "Try different topics."],
             "strength_areas": ["Consistency"],
             "weakness_areas": ["Complex topics"]

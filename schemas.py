@@ -153,20 +153,6 @@ class Token(BaseModel):
 class TokenData(BaseModel):
     """The data you'll store inside the JWT token."""
     email: Optional[str] = None
-    user_id: Optional[int] = None
-
-# --- Chat Schemas ---
-
-class ChatRequest(BaseModel):
-    """Request for chat with AI"""
-    topic: str = Field(..., min_length=2, max_length=100, description="Topic for discussion")
-    message: str = Field(..., min_length=1, max_length=1000, description="Message to send to AI")
-
-class ChatResponse(BaseModel):
-    """Response from chat with AI"""
-    response: str
-
-# --- Export Schemas ---
 
 class ExportRequest(BaseModel):
     """Request for exporting data"""
