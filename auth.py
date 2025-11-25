@@ -9,7 +9,7 @@ import logging
 
 # Import your config, database, and schemas
 from config import settings
-from database import Database
+from database import User, AiService, get_db
 import schemas
 
 # Setup logging
@@ -20,8 +20,8 @@ logger = logging.getLogger(__name__)
 pwd_context = CryptContext(schemes=["bcrypt"], deprecated="auto")
 oauth2_scheme = OAuth2PasswordBearer(tokenUrl="token") # Tells FastAPI where to get the token
 
-DBUser = Database.User
-DBServices = Database.AiService
+DBUser = User
+DBServices = AiService
 
 # --- JWT Functions ---
 
@@ -30,7 +30,7 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
     Create JWT access token with configurable expiration
     """
     to_encode = data.copy()
-    
+
     # Use settings for token expiration
     if expires_delta:
         expire = datetime.now(timezone.utc) + expires_delta
@@ -38,17 +38,17 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         expire = datetime.now(timezone.utc) + timedelta(
             minutes=settings.ACCESS_TOKEN_EXPIRE_MINUTES
         )
-    
+
     to_encode.update({
         "exp": expire,
         "iat": datetime.now(timezone.utc),  # Issued at timestamp
         "type": "access_token"
     })
-    
+
     try:
         encoded_jwt = jwt.encode(
-            to_encode, 
-            settings.SECRET_KEY, 
+            to_encode,
+            settings.SECRET_KEY,
             algorithm=settings.ALGORITHM
         )
         return encoded_jwt
@@ -60,8 +60,8 @@ def create_access_token(data: dict, expires_delta: Optional[timedelta] = None):
         )
 
 def get_current_user(
-    token: str = Depends(oauth2_scheme), 
-    db: Session = Depends(Database.get_db)
+    token: str = Depends(oauth2_scheme),
+    db: Session = Depends(get_db)
 ):
     """
     Dependency to get the current user. This function protects your endpoints.
@@ -71,45 +71,45 @@ def get_current_user(
         detail="Could not validate credentials",
         headers={"WWW-Authenticate": "Bearer"},
     )
-    
+
     try:
         payload = jwt.decode(
-            token, 
-            settings.SECRET_KEY, 
+            token,
+            settings.SECRET_KEY,
             algorithms=[settings.ALGORITHM]
         )
         email: str = payload.get("sub")
-        
+
         if email is None:
             logger.warning("Token missing email subject")
             raise credentials_exception
-            
+
         # Validate token type
         if payload.get("type") != "access_token":
             logger.warning("Invalid token type")
             raise credentials_exception
-            
+
         token_data = schemas.TokenData(email=email)
-        
+
     except JWTError as e:
         logger.warning(f"JWT validation error: {e}")
         raise credentials_exception
     except Exception as e:
         logger.error(f"Unexpected token error: {e}")
         raise credentials_exception
-    
+
     user = get_user_by_email(db, email=token_data.email)
     if user is None:
         logger.warning(f"User not found for email: {token_data.email}")
         raise credentials_exception
-        
+
     if not user.is_active:
         logger.warning(f"Inactive user attempt: {token_data.email}")
         raise HTTPException(
             status_code=status.HTTP_403_FORBIDDEN,
             detail="Inactive user"
         )
-        
+
     logger.info(f"User authenticated: {user.email}")
     return user
 
@@ -141,18 +141,18 @@ def authenticate_user(db_session: Session, email: str, password: str):
         if not user:
             logger.warning(f"Authentication failed: user not found - {email}")
             return False
-            
+
         if not verify_password(password, user.hashed_password):
             logger.warning(f"Authentication failed: invalid password - {email}")
             return False
-            
+
         if not user.is_active:
             logger.warning(f"Authentication failed: inactive user - {email}")
             return False
-            
+
         logger.info(f"User authenticated successfully: {email}")
         return user
-        
+
     except Exception as e:
         logger.error(f"Authentication error for {email}: {e}")
         return False
@@ -188,21 +188,21 @@ def create_user(db_session: Session, name: str, email: str, password: str):
                 status_code=status.HTTP_400_BAD_REQUEST,
                 detail="Email already registered"
             )
-        
+
         hashed_password = get_password_hash(password)
         db_user = DBUser(
-            name=name, 
-            email=email, 
+            name=name,
+            email=email,
             hashed_password=hashed_password,
             created_at=datetime.now(timezone.utc)
         )
         db_session.add(db_user)
         db_session.commit()
         db_session.refresh(db_user)
-        
+
         logger.info(f"User created successfully: {email}")
         return db_user
-        
+
     except HTTPException:
         raise
     except Exception as e:
@@ -217,17 +217,17 @@ def create_ai_service(db_session: Session, name: str, description: str):
     """Create a new AI service"""
     try:
         db_service = DBServices(
-            name=name, 
+            name=name,
             description=description,
             created_at=datetime.now(timezone.utc)
         )
         db_session.add(db_service)
         db_session.commit()
         db_session.refresh(db_service)
-        
+
         logger.info(f"AI service created: {name}")
         return db_service
-        
+
     except Exception as e:
         db_session.rollback()
         logger.error(f"AI service creation error for {name}: {e}")
@@ -243,10 +243,10 @@ def deactivate_user(db_session: Session, user: DBUser):
         user.updated_at = datetime.now(timezone.utc)
         db_session.commit()
         db_session.refresh(user)
-        
+
         logger.info(f"User deactivated: {user.email}")
         return user
-        
+
     except Exception as e:
         db_session.rollback()
         logger.error(f"User deactivation error for {user.email}: {e}")
@@ -259,10 +259,10 @@ def deactivate_ai_service(db_session: Session, service: DBServices):
         service.updated_at = datetime.now(timezone.utc)
         db_session.commit()
         db_session.refresh(service)
-        
+
         logger.info(f"AI service deactivated: {service.name}")
         return service
-        
+
     except Exception as e:
         db_session.rollback()
         logger.error(f"AI service deactivation error for {service.name}: {e}")
@@ -275,10 +275,10 @@ def activate_user(db_session: Session, user: DBUser):
         user.updated_at = datetime.now(timezone.utc)
         db_session.commit()
         db_session.refresh(user)
-        
+
         logger.info(f"User activated: {user.email}")
         return user
-        
+
     except Exception as e:
         db_session.rollback()
         logger.error(f"User activation error for {user.email}: {e}")
@@ -291,10 +291,10 @@ def activate_ai_service(db_session: Session, service: DBServices):
         service.updated_at = datetime.now(timezone.utc)
         db_session.commit()
         db_session.refresh(service)
-        
+
         logger.info(f"AI service activated: {service.name}")
         return service
-        
+
     except Exception as e:
         db_session.rollback()
         logger.error(f"AI service activation error for {service.name}: {e}")

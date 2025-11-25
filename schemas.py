@@ -84,8 +84,16 @@ class QuizResponse(BaseModel):
     difficulty: str
     questions: List[QuizQuestion]
     total_questions: int
-    source: Optional[str] = Field(None, description="AI service used for generation")
     generated_at: Optional[str] = None
+
+# --- Question Generation Schemas ---
+
+class QuestionRequest(BaseModel):
+    """Request for generating interview questions"""
+    topic: str = Field(..., min_length=2, max_length=100, description="Main topic for interview questions")
+    job_description: str = Field(..., min_length=2, max_length=500, description="Description of the job role")
+    interview_type: str = Field(..., max_length=50, description="Type of interview: Technical, Behavioral, HR, etc.")
+    company_nature: str = Field(..., max_length=50, description="Nature of company: Startup, Corporation, Remote, etc.")
 
 # --- Analytics Schemas ---
 

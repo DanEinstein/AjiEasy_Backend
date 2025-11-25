@@ -17,6 +17,7 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+<<<<<<< HEAD
 
 def _build_engine():
     """
@@ -58,33 +59,46 @@ class Database:
 
     class User(Base):
         __tablename__ = "users"
+=======
+# Create engine
+engine = create_engine(
+    settings.DATABASE_URL,
+    pool_pre_ping=True,
+    pool_recycle=300,
+    connect_args={
+        "sslmode": "require",
+    }
+)
+logger.info("Configured for PostgreSQL database with psycopg2")
 
-        id = Column(Integer, primary_key=True, index=True)
-        name = Column(String(100), index=True, nullable=False)
-        email = Column(String(255), unique=True, index=True, nullable=False)
-        hashed_password = Column(String(255), nullable=False)
-        is_active = Column(Boolean, default=True)
-        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-        updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc), 
-                          onupdate=lambda: datetime.now(timezone.utc))
+# Create session maker
+SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
+>>>>>>> 05b47462710753a6b943a79ca5cd5508d4cc6961
 
-        def __repr__(self):
-            return f"User(id={self.id}, email={self.email}, is_active={self.is_active})"
+# Create base class
+Base = declarative_base()
 
-    class AiService(Base):
-        __tablename__ = "ai_services"
+# User model
+class User(Base):
+    __tablename__ = "users"
 
-        id = Column(Integer, primary_key=True, index=True)
-        name = Column(String(100), index=True, nullable=False)
-        description = Column(Text)
-        is_active = Column(Boolean, default=True)
-        created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
-        updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
-                          onupdate=lambda: datetime.now(timezone.utc))
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), index=True, nullable=False)
+    email = Column(String(255), unique=True, index=True, nullable=False)
+    hashed_password = Column(String(255), nullable=False)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                      onupdate=lambda: datetime.now(timezone.utc))
 
-        def __repr__(self):
-            return f"AiService(id={self.id}, name={self.name}, is_active={self.is_active})"
+    def __repr__(self):
+        return f"User(id={self.id}, email={self.email}, is_active={self.is_active})"
 
+# AiService model
+class AiService(Base):
+    __tablename__ = "ai_services"
+
+<<<<<<< HEAD
     @staticmethod
     def get_db():
         db = Database.SessionLocal()
@@ -98,18 +112,20 @@ class Database:
         finally:
             db.close()
             logger.debug("Database session closed")
+=======
+    id = Column(Integer, primary_key=True, index=True)
+    name = Column(String(100), index=True, nullable=False)
+    description = Column(Text)
+    is_active = Column(Boolean, default=True)
+    created_at = Column(DateTime, default=lambda: datetime.now(timezone.utc))
+    updated_at = Column(DateTime, default=lambda: datetime.now(timezone.utc),
+                      onupdate=lambda: datetime.now(timezone.utc))
+>>>>>>> 05b47462710753a6b943a79ca5cd5508d4cc6961
 
-    @staticmethod
-    def create_tables():
-        try:
-            Database.Base.metadata.create_all(bind=Database.engine)
-            logger.info("Database tables created successfully")
-            tables = Database.Base.metadata.tables.keys()
-            logger.info(f"Available tables: {list(tables)}")
-        except Exception as e:
-            logger.error(f"Error creating database tables: {e}")
-            raise
+    def __repr__(self):
+        return f"AiService(id={self.id}, name={self.name}, is_active={self.is_active})"
 
+<<<<<<< HEAD
     @staticmethod
     def test_connection():
         try:
@@ -120,28 +136,62 @@ class Database:
         except Exception as e:
             logger.error(f"Database connection test failed: {e}")
             return False
+=======
+# Database dependency function
+def get_db():
+    db = SessionLocal()
+    try:
+        yield db
+        logger.debug("Database session created successfully")
+    except Exception as e:
+        logger.error(f"Database session error: {e}")
+        db.rollback()
+        raise
+    finally:
+        db.close()
+        logger.debug("Database session closed")
+>>>>>>> 05b47462710753a6b943a79ca5cd5508d4cc6961
 
-    @staticmethod
-    def get_database_info():
-        try:
-            with Database.engine.connect() as conn:
-                if "postgresql" in settings.DATABASE_URL.lower():
-                    result = conn.execute("SELECT version();")
-                    db_version = result.scalar()
-                    db_type = "PostgreSQL"
-                else:
-                    db_version = "SQLite"
-                    db_type = "SQLite"
-                
-                return {
-                    "type": db_type,
-                    "version": db_version,
-                    "url": settings.DATABASE_URL.split('@')[0] + '@[hidden]' if '@' in settings.DATABASE_URL else settings.DATABASE_URL,
-                    "tables": list(Database.Base.metadata.tables.keys())
-                }
-        except Exception as e:
-            logger.error(f"Error getting database info: {e}")
-            return {"error": str(e)}
+def create_tables():
+    try:
+        Base.metadata.create_all(bind=engine)
+        logger.info("Database tables created successfully")
+        tables = Base.metadata.tables.keys()
+        logger.info(f"Available tables: {list(tables)}")
+    except Exception as e:
+        logger.error(f"Error creating database tables: {e}")
+        raise
+
+def test_connection():
+    try:
+        with engine.connect() as conn:
+            result = conn.execute("SELECT 1")
+            logger.info("Database connection test successful")
+            return True
+    except Exception as e:
+        logger.error(f"Database connection test failed: {e}")
+        return False
+
+def get_database_info():
+    try:
+        with engine.connect() as conn:
+            if "postgresql" in settings.DATABASE_URL.lower():
+                result = conn.execute("SELECT version();")
+                db_version = result.scalar()
+                db_type = "PostgreSQL"
+            else:
+                db_version = "SQLite"
+                db_type = "SQLite"
+
+            return {
+                "type": db_type,
+                "version": db_version,
+                "url": settings.DATABASE_URL.split('@')[0] + '@[hidden]' if '@' in settings.DATABASE_URL else settings.DATABASE_URL,
+                "tables": list(Base.metadata.tables.keys())
+            }
+    except Exception as e:
+        logger.error(f"Error getting database info: {e}")
+        return {"error": str(e)}
 
 
 # Backwards-compatible aliases for modules that import the previous API
