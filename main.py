@@ -21,7 +21,6 @@ from ai_service import (
     free_ai_service # Import the service instance for analytics
 )
 from schemas import (
-    QuestionRequest, QuestionResponse,
     QuizRequest, QuizResponse,
     ChatRequest, ChatResponse,
     AnalyticsResponse,
