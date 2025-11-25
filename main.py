@@ -66,6 +66,11 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
+# Add explicit OPTIONS handler for preflight requests
+@app.options("/{path:path}")
+async def options_handler(path: str):
+    return {"message": "OK"}
+
 @app.get("/")
 async def root():
     return {
