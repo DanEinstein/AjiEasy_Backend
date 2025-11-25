@@ -123,15 +123,39 @@ Return ONLY a valid JSON array with this structure:
         question_count: int = 10,
         focus_areas: str = ""
     ) -> Dict:
-        """Generate quiz using Gemini (Primary)"""
+        """Generate quiz using Groq (Primary), Gemini (Fallback)"""
         if not settings.ENABLE_QUIZ:
             return {"error": "Quiz feature is disabled"}
 
         question_count = min(question_count, settings.MAX_QUIZ_QUESTIONS)
 
+        # Try Groq first (Primary)
+        if self.groq_enabled:
+            print(f"🔄 Generating Quiz with Groq for: {topic}")
+            groq_quiz = await self._generate_groq_quiz(topic, difficulty, question_count, focus_areas)
+            if groq_quiz:
+                return groq_quiz
+
+        # Fallback to Gemini
         if GEMINI_ENABLED:
-            print(f"🔄 Generating Quiz with Gemini for: {topic}")
-            prompt = f"""Create {question_count} multiple-choice interview questions about "{topic}" at {difficulty} difficulty level.
+            print(f"🔄 Fallback: Generating Quiz with Gemini for: {topic}")
+            gemini_quiz = await self._generate_gemini_quiz(topic, difficulty, question_count, focus_areas)
+            if gemini_quiz:
+                return gemini_quiz
+
+        # Last resort: local fallback
+        print("⚠️ Using local fallback for quiz")
+        return self._generate_enhanced_local_quiz(topic, difficulty, question_count, focus_areas)
+
+    async def _generate_groq_quiz(
+        self,
+        topic: str,
+        difficulty: str,
+        question_count: int,
+        focus_areas: str
+    ) -> Optional[Dict]:
+        """Generate quiz using Groq API"""
+        prompt = f"""Create {question_count} multiple-choice interview questions about "{topic}" at {difficulty} difficulty level.
 {f"Focus areas: {focus_areas}" if focus_areas else ""}
 
 Return ONLY valid JSON array with this exact structure:
@@ -147,34 +171,80 @@ Return ONLY valid JSON array with this exact structure:
         "difficulty": "{difficulty}"
     }}
 ]"""
-            try:
-                response = await asyncio.to_thread(
-                    gemini_model.generate_content,
-                    prompt,
-                    generation_config=genai.types.GenerationConfig(
-                        temperature=0.7,
-                        max_output_tokens=4000,
-                    )
+
+        try:
+            response_text = await self._call_groq_api(prompt, max_tokens=4000, json_mode=False)
+            if response_text:
+                # Clean and extract JSON
+                clean_text = response_text.replace('```json', '').replace('```', '').strip()
+                json_match = re.search(r'\[\s*\{.*\}\s*\]', clean_text, re.DOTALL)
+                if json_match:
+                    questions = json.loads(json_match.group(0))
+                    print(f"✅ Groq generated {len(questions)} quiz questions")
+                    return {
+                        "topic": topic,
+                        "difficulty": difficulty,
+                        "questions": questions,
+                        "totalQuestions": len(questions),
+                        "source": "groq"
+                    }
+        except Exception as e:
+            print(f"❌ Groq Quiz Gen Error: {e}")
+
+        return None
+
+    async def _generate_gemini_quiz(
+        self,
+        topic: str,
+        difficulty: str,
+        question_count: int,
+        focus_areas: str
+    ) -> Optional[Dict]:
+        """Generate quiz using Gemini API (Fallback)"""
+        prompt = f"""Create {question_count} multiple-choice interview questions about "{topic}" at {difficulty} difficulty level.
+{f"Focus areas: {focus_areas}" if focus_areas else ""}
+
+Return ONLY valid JSON array with this exact structure:
+[
+    {{
+        "id": 1,
+        "question": "Question text?",
+        "options": ["A", "B", "C", "D"],
+        "correctAnswer": 0,
+        "explanation": "Why?",
+        "hint": "Hint",
+        "type": "technical",
+        "difficulty": "{difficulty}"
+    }}
+]"""
+
+        try:
+            response = await asyncio.to_thread(
+                gemini_model.generate_content,
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=4000,
                 )
+            )
 
-                if response.text:
-                    # Clean up markdown code blocks if present
-                    clean_text = response.text.replace('```json', '').replace('```', '').strip()
-                    json_match = re.search(r'\[\s*\{.*\}\s*\]', clean_text, re.DOTALL)
-                    if json_match:
-                        questions = json.loads(json_match.group(0))
-                        return {
-                            "topic": topic,
-                            "difficulty": difficulty,
-                            "questions": questions,
-                            "totalQuestions": len(questions),
-                            "source": "gemini"
-                        }
-            except Exception as e:
-                print(f"❌ Gemini Quiz Gen Error: {e}")
+            if response.text:
+                clean_text = response.text.replace('```json', '').replace('```', '').strip()
+                json_match = re.search(r'\[\s*\{.*\}\s*\]', clean_text, re.DOTALL)
+                if json_match:
+                    questions = json.loads(json_match.group(0))
+                    print(f"✅ Gemini generated {len(questions)} quiz questions")
+                    return {
+                        "topic": topic,
+                        "difficulty": difficulty,
+                        "questions": questions,
+                        "totalQuestions": len(questions),
+                        "source": "gemini"
+                    }
+        except Exception as e:
+            print(f"❌ Gemini Quiz Gen Error: {e}")
 
-        # Fallback to local
-        return self._generate_enhanced_local_quiz(topic, difficulty, question_count, focus_areas)
+        return None
 
     async def generate_questions(
         self,
