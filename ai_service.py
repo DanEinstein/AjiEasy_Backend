@@ -218,16 +218,28 @@ Return ONLY a valid JSON array with this exact structure:
                     )
                 )
 
+                print(f"✅ Gemini Response Received")
                 if response.text:
+                    print(f"📝 Raw Response Length: {len(response.text)} chars")
                     # Clean up markdown code blocks if present
                     clean_text = response.text.replace('```json', '').replace('```', '').strip()
                     json_match = re.search(r'\[\s*\{.*\}\s*\]', clean_text, re.DOTALL)
                     if json_match:
-                        return json.loads(json_match.group(0))
+                        questions = json.loads(json_match.group(0))
+                        print(f"✅ Successfully parsed {len(questions)} questions")
+                        return questions
+                    else:
+                        print(f"❌ No JSON array found in response. First 200 chars: {clean_text[:200]}")
+                else:
+                    print("❌ Empty response from Gemini")
+            except json.JSONDecodeError as e:
+                print(f"❌ JSON Parse Error: {e}")
+                print(f"   Attempted to parse: {clean_text[:500] if 'clean_text' in locals() else 'N/A'}")
             except Exception as e:
-                print(f"❌ Gemini Question Gen Error: {e}")
+                print(f"❌ Gemini Question Gen Error: {type(e).__name__}: {e}")
 
         # Fallback to local
+        print("⚠️ Using local fallback for questions")
         return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
 
     async def generate_analytics(self, user_data: Dict) -> Dict:
