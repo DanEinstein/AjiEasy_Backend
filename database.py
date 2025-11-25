@@ -24,6 +24,8 @@ def _build_engine():
     Ensures local SQLite runs without SSL while production Postgres enforces it.
     """
     database_url = settings.DATABASE_URL
+    if database_url and database_url.startswith("postgres://"):
+        database_url = database_url.replace("postgres://", "postgresql://", 1)
 
     connect_args = {}
     engine_kwargs = {
