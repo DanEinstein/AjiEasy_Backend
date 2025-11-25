@@ -125,7 +125,16 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     access_token = create_access_token(
         data={"sub": user.email}, expires_delta=access_token_expires
     )
-    return {"access_token": access_token, "token_type": "bearer", "user": {"name": user.name, "email": user.email}}
+    return {
+        "access_token": access_token,
+        "token_type": "bearer",
+        "user": {
+            "id": user.id,
+            "name": user.name,
+            "email": user.email,
+            "is_active": user.is_active
+        }
+    }
 
 @app.get("/users/me", response_model=UserResponse)
 def read_users_me(current_user: UserResponse = Depends(get_current_user)):
