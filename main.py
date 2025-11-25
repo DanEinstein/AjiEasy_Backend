@@ -50,6 +50,7 @@ origins = [
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5500",
     "https://ajieasy.vercel.app",
+    "https://aji-easy-frontend.vercel.app",
     "https://ajieasy-frontend.onrender.com",
     settings.FRONTEND_URL
 ]
