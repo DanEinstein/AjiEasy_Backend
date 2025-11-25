@@ -1,5 +1,6 @@
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
+from fastapi.responses import JSONResponse
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 from typing import List, Optional
@@ -44,6 +45,18 @@ app = FastAPI(
     description="Backend for AjiEasy AI Interview Platform",
     version="2.0.0"
 )
+
+# Global Exception Handler for debugging
+@app.exception_handler(Exception)
+async def global_exception_handler(request: Request, exc: Exception):
+    import traceback
+    error_details = traceback.format_exc()
+    print(f"🔥 CRITICAL ERROR: {str(exc)}")
+    print(f"🔥 TRACEBACK:\n{error_details}")
+    return JSONResponse(
+        status_code=500,
+        content={"detail": f"Internal Server Error: {str(exc)}"} # Exposing error for debugging
+    )
 
 # CORS Configuration - Allow frontend origins
 origins = [
