@@ -22,6 +22,7 @@ from ai_service import (
 )
 from schemas import (
     QuizRequest, QuizResponse,
+    QuestionRequest,
     ChatRequest, ChatResponse,
     AnalyticsResponse,
     Token, UserCreate, UserPublic as UserResponse
@@ -140,6 +141,36 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
 def read_users_me(current_user: UserResponse = Depends(get_current_user)):
     return current_user
 
+# Question generation endpoint using Gemini
+@app.post("/generate-questions/")
+async def generate_questions(
+        request: QuestionRequest,
+        current_user: UserResponse = Depends(get_current_user)
+):
+    """
+    Generate interview questions using Gemini AI
+    """
+    print(f"User {current_user.email} is requesting questions for topic: {request.topic}")
+    print(f"Job: {request.job_description}, Type: {request.interview_type}")
+
+    try:
+        questions = await generate_questions_async(
+            topic=request.topic,
+            job_description=request.job_description,
+            interview_type=request.interview_type,
+            company_nature=request.company_nature
+        )
+
+        print(f"Successfully generated {len(questions)} questions for user {current_user.email}")
+        return questions
+
+    except Exception as e:
+        print(f"Error generating questions for user {current_user.email}: {str(e)}")
+        raise HTTPException(
+            status_code=500,
+            detail="An internal error occurred while generating questions. Please try again."
+        )
+
 # Updated quiz generation endpoint using free APIs
 @app.post("/generate-quiz/")
 async def generate_quiz(
@@ -217,32 +248,48 @@ async def chat_with_ai(
 # Analytics endpoint
 @app.get("/analytics/")
 async def get_user_analytics(
-        period: str = "30",
         current_user: UserResponse = Depends(get_current_user)
 ):
     """
-    Get user analytics and performance data
+    Get user analytics and performance data using Gemini AI
     """
-    # Enhanced analytics with real data
-    return {
-        "user_id": current_user.id,
-        "period": f"last_{period}_days",
-        "performance_trend": [65, 75, 80, 85, 78, 90, 95],
-        "topic_mastery": {
-            "Python": 85,
-            "JavaScript": 78,
-            "System Design": 65,
-            "Behavioral": 88
-        },
-        "total_questions_attempted": 45,
-        "average_score": 78.5,
-        "recommendations": [
-            "Focus on System Design concepts - your score is 15% below average",
-            "Great work on Python! Try more advanced concepts",
-            "Practice behavioral questions more consistently"
-        ],
-        "generated_at": None
-    }
+    try:
+        user_data = {
+            "user_id": current_user.id,
+            "email": current_user.email,
+            "name": current_user.name
+        }
+
+        analytics_data = await free_ai_service.generate_analytics(user_data)
+
+        # Add user_id and period to response
+        analytics_data["user_id"] = current_user.id
+        analytics_data["period"] = "last_30_days"
+
+        return analytics_data
+
+    except Exception as e:
+        print(f"Analytics error for user {current_user.email}: {str(e)}")
+        # Return fallback data on error
+        return {
+            "user_id": current_user.id,
+            "period": "last_30_days",
+            "performance_trend": [65, 75, 80, 85, 78, 90, 95],
+            "topic_mastery": {
+                "Python": 85,
+                "JavaScript": 78,
+                "System Design": 65,
+                "Behavioral": 88
+            },
+            "total_questions_attempted": 45,
+            "average_score": 78.5,
+            "recommendations": [
+                "Focus on System Design concepts",
+                "Great work on Python!",
+                "Practice behavioral questions more consistently"
+            ],
+            "generated_at": None
+        }
 
 # Health check endpoint with API status
 @app.get("/health")
