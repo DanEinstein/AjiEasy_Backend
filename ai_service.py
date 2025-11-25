@@ -123,32 +123,57 @@ Return ONLY a valid JSON array with this structure:
         question_count: int = 10,
         focus_areas: str = ""
     ) -> Dict:
-        """Generate quiz using Groq (Primary) -> OpenRouter -> DeepSeek -> Local"""
+        """Generate quiz using Gemini (Primary)"""
         if not settings.ENABLE_QUIZ:
             return {"error": "Quiz feature is disabled"}
 
         question_count = min(question_count, settings.MAX_QUIZ_QUESTIONS)
 
-        # Try Groq first (Primary)
-        if self.groq_enabled:
-            print(f"🔄 Generating Quiz with Groq for: {topic}")
-            quiz_data = await self._generate_groq_quiz(topic, difficulty, question_count, focus_areas)
-            if quiz_data and "error" not in quiz_data:
-                return quiz_data
+        if GEMINI_ENABLED:
+            print(f"🔄 Generating Quiz with Gemini for: {topic}")
+            prompt = f"""Create {question_count} multiple-choice interview questions about "{topic}" at {difficulty} difficulty level.
+{f"Focus areas: {focus_areas}" if focus_areas else ""}
 
-        # Fallbacks...
-        if self.openrouter_enabled:
-            print(f"🔄 Generating Quiz with OpenRouter for: {topic}")
-            quiz_data = await self._generate_openrouter_quiz(topic, difficulty, question_count, focus_areas)
-            if quiz_data and "error" not in quiz_data:
-                return quiz_data
+Return ONLY valid JSON array with this exact structure:
+[
+    {{
+        "id": 1,
+        "question": "Question text?",
+        "options": ["A", "B", "C", "D"],
+        "correctAnswer": 0,
+        "explanation": "Why?",
+        "hint": "Hint",
+        "type": "technical",
+        "difficulty": "{difficulty}"
+    }}
+]"""
+            try:
+                response = await asyncio.to_thread(
+                    gemini_model.generate_content,
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.7,
+                        max_output_tokens=4000,
+                    )
+                )
 
-        if self.deepseek_enabled:
-            print(f"🔄 Generating Quiz with DeepSeek for: {topic}")
-            quiz_data = await self._generate_deepseek_quiz(topic, difficulty, question_count, focus_areas)
-            if quiz_data and "error" not in quiz_data:
-                return quiz_data
+                if response.text:
+                    # Clean up markdown code blocks if present
+                    clean_text = response.text.replace('```json', '').replace('```', '').strip()
+                    json_match = re.search(r'\[\s*\{.*\}\s*\]', clean_text, re.DOTALL)
+                    if json_match:
+                        questions = json.loads(json_match.group(0))
+                        return {
+                            "topic": topic,
+                            "difficulty": difficulty,
+                            "questions": questions,
+                            "totalQuestions": len(questions),
+                            "source": "gemini"
+                        }
+            except Exception as e:
+                print(f"❌ Gemini Quiz Gen Error: {e}")
 
+        # Fallback to local
         return self._generate_enhanced_local_quiz(topic, difficulty, question_count, focus_areas)
 
     async def generate_questions(
@@ -158,7 +183,7 @@ Return ONLY a valid JSON array with this structure:
         interview_type: str,
         company_nature: str
     ) -> List[Dict]:
-        """Generate interview questions using Groq (Primary)"""
+        """Generate interview questions using Gemini (Primary)"""
 
         prompt = f"""Generate 8 professional interview questions for:
 TOPIC: {topic}
@@ -206,7 +231,7 @@ Return ONLY a valid JSON array with this exact structure:
         return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
 
     async def generate_analytics(self, user_data: Dict) -> Dict:
-        """Generate analytics insights using Groq"""
+        """Generate analytics insights using Gemini"""
 
         prompt = f"""Analyze this user's interview preparation performance and provide insights:
 User Data: {json.dumps(user_data)}
@@ -221,21 +246,25 @@ Return ONLY a valid JSON object with this structure:
     "weakness_areas": ["Area 1", "Area 2"]
 }}
 """
-        if self.groq_enabled:
-            print(f"🔄 Generating Analytics with Groq")
+        if GEMINI_ENABLED:
+            print(f"🔄 Generating Analytics with Gemini")
             try:
-                response = await self._call_groq_api(prompt, max_tokens=1000, json_mode=True)
-                if response:
-                    # If json_mode is on, response should be valid JSON
-                    try:
-                        return json.loads(response)
-                    except:
-                        # Fallback regex extraction
-                        json_match = re.search(r'\{.*\}', response, re.DOTALL)
-                        if json_match:
-                            return json.loads(json_match.group(0))
+                response = await asyncio.to_thread(
+                    gemini_model.generate_content,
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.7,
+                        max_output_tokens=1000,
+                    )
+                )
+
+                if response.text:
+                    clean_text = response.text.replace('```json', '').replace('```', '').strip()
+                    json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                    if json_match:
+                        return json.loads(json_match.group(0))
             except Exception as e:
-                print(f"❌ Groq Analytics Error: {e}")
+                print(f"❌ Gemini Analytics Error: {e}")
 
         # Fallback Analytics
         return {
