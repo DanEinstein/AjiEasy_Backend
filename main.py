@@ -11,10 +11,8 @@ from datetime import timedelta
 
 from database import get_db, engine, Base, User, AiService
 from auth import (
-    Token, UserCreate, UserResponse,
     authenticate_user, create_access_token,
-    get_current_user, get_password_hash,
-    ACCESS_TOKEN_EXPIRE_MINUTES
+    get_current_user, get_password_hash
 )
 from ai_service import (
     generate_questions_async,
@@ -26,9 +24,13 @@ from schemas import (
     QuestionRequest, QuestionResponse,
     QuizRequest, QuizResponse,
     ChatRequest, ChatResponse,
-    AnalyticsResponse
+    AnalyticsResponse,
+    Token, UserCreate, UserPublic as UserResponse
 )
 from config import settings
+
+# Token expiration constant
+ACCESS_TOKEN_EXPIRE_MINUTES = settings.ACCESS_TOKEN_EXPIRE_MINUTES
 
 # Configure logging
 logging.basicConfig(level=logging.INFO)
@@ -107,15 +109,15 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
     )
     return {"access_token": access_token, "token_type": "bearer", "user": {"name": user.name, "email": user.email}}
 
-@app.get("/users/me", response_model=schemas.UserPublic)
-def read_users_me(current_user: schemas.UserPublic = Depends(auth.get_current_user)):
+@app.get("/users/me", response_model=UserResponse)
+def read_users_me(current_user: UserResponse = Depends(get_current_user)):
     return current_user
 
 # Updated quiz generation endpoint using free APIs
 @app.post("/generate-quiz/")
 async def generate_quiz(
-        request: schemas.QuizRequest,
-        current_user: schemas.UserPublic = Depends(auth.get_current_user)
+        request: QuizRequest,
+        current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Generate interactive quiz questions using free APIs
@@ -160,8 +162,8 @@ async def generate_quiz(
 # New chat endpoint
 @app.post("/chat/")
 async def chat_with_ai(
-        request: schemas.ChatRequest,
-        current_user: schemas.UserPublic = Depends(auth.get_current_user)
+        request: ChatRequest,
+        current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Chat with AI assistant using free APIs
@@ -189,7 +191,7 @@ async def chat_with_ai(
 @app.get("/analytics/")
 async def get_user_analytics(
         period: str = "30",
-        current_user: schemas.UserPublic = Depends(auth.get_current_user)
+        current_user: UserResponse = Depends(get_current_user)
 ):
     """
     Get user analytics and performance data
