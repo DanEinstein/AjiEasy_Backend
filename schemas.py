@@ -144,6 +144,35 @@ class FavoritesResponse(BaseModel):
 
 # --- Token Schemas (for Login) ---
 
+class Token(BaseModel):
+    """The access token you send after a successful login."""
+    access_token: str
+    token_type: str
+    user: Optional[UserPublic] = None  # Include user data for immediate frontend use
+
+class TokenData(BaseModel):
+    """The data you'll store inside the JWT token."""
+    email: Optional[str] = None
+    user_id: Optional[int] = None
+
+# --- Chat Schemas ---
+
+class ChatRequest(BaseModel):
+    """Request for chat with AI"""
+    topic: str = Field(..., min_length=2, max_length=100, description="Topic for discussion")
+    message: str = Field(..., min_length=1, max_length=1000, description="Message to send to AI")
+    history: Optional[List[Dict[str, str]]] = Field(default=[], description="Chat history for context")
+
+class ChatResponse(BaseModel):
+    """Response from chat with AI"""
+    response: str
+
+class ExportRequest(BaseModel):
+    """Request for exporting data"""
+    format: str = Field("pdf", description="Export format: pdf, json, csv")
+    content_type: str = Field("questions", description="Content type: questions, quiz, analytics")
+    data_ids: Optional[List[int]] = None
+
 class ExportResponse(BaseModel):
     """Export response with download URL"""
     download_url: str
