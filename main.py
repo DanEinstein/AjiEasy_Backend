@@ -4,6 +4,7 @@ from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
 import os
 import uvicorn
+import logging
 
 import auth
 import ai_service
@@ -22,6 +23,9 @@ app = FastAPI(
     redoc_url="/redoc"
 )
 
+# Structured logger
+logger = logging.getLogger(__name__)
+
 # CORS middleware - UPDATED FOR PRODUCTION
 app.add_middleware(
     CORSMiddleware,
@@ -30,11 +34,9 @@ app.add_middleware(
         "http://localhost:8080", 
         "http://127.0.0.1:3000",
         "http://127.0.0.1:8080",
-        "https://daneinstein.github.io",  # GitHub Pages
-        "https://*.github.io",            # All GitHub Pages subdomains
-        "https://aji-easy-frontend.vercel.app",     # Your Vercel domain
-        "https://*.vercel.app",           # All Vercel subdomains
+        "https://aji-easy-frontend.vercel.app",
     ],
+    allow_origin_regex=r"https://([a-z0-9-]+\.)?vercel\.app$|https://([a-z0-9-]+\.)?github\.io$",
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["*"],
@@ -74,7 +76,8 @@ def login_for_access_token(
             headers={"WWW-Authenticate": "Bearer"},
         )
     access_token = auth.create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
+    public_user = schemas.UserPublic.model_validate(user)
+    return {"access_token": access_token, "token_type": "bearer", "user": public_user}
 
 @app.post("/services/", response_model=schemas.AiServicePublic)
 def add_new_service(
@@ -99,10 +102,7 @@ async def generate_questions(
     """
     Generate interview questions using AI
     """
-    print(f"User {current_user.email} is requesting questions for topic: {request.topic}")
-    print(f"Job Description: {request.job_description}")
-    print(f"Interview Type: {request.interview_type}")
-    print(f"Company Nature: {request.company_nature}")
+    logger.info("User %s requested AI questions", current_user.email)
     
     try:
         # Generate questions using the transformed ai_service (no DB dependency)
@@ -113,16 +113,12 @@ async def generate_questions(
             company_nature=request.company_nature
         )
         
-        # Handle error responses
-        if isinstance(response, dict) and "error" in response:
-            raise HTTPException(status_code=400, detail=response["error"])
-        
         # Return the questions array directly (matching frontend expectation)
-        print(f"Successfully generated {len(response)} questions for user {current_user.email}")
+        logger.info("Generated %s questions for %s", len(response), current_user.email)
         return response
         
     except Exception as e:
-        print(f"Error generating questions for user {current_user.email}: {str(e)}")
+        logger.exception("Question generation failed for %s", current_user.email)
         raise HTTPException(
             status_code=500, 
             detail="An internal error occurred while generating questions. Please try again."
@@ -141,8 +137,8 @@ async def generate_quiz(
     """
     Generate interactive quiz questions using free APIs
     """
-    print(f"User {current_user.email} is requesting quiz for topic: {request.topic}")
-    print(f"Difficulty: {request.difficulty}, Questions: {request.question_count}")
+    logger.info("User %s requested quiz topic=%s difficulty=%s count=%s",
+                current_user.email, request.topic, request.difficulty, request.question_count)
     
     try:
         # Use the free AI service for quiz generation
@@ -154,8 +150,8 @@ async def generate_quiz(
             question_count=request.question_count,
             focus_areas=request.focus_areas or ""
         )
-        
-        if "error" in quiz_data:
+
+        if isinstance(quiz_data, dict) and quiz_data.get("error"):
             raise HTTPException(status_code=400, detail=quiz_data["error"])
         
         # Convert to the expected response format
@@ -168,11 +164,11 @@ async def generate_quiz(
             "generated_at": None  # You can add timestamp if needed
         }
         
-        print(f"Successfully generated quiz with {quiz_data['totalQuestions']} questions for user {current_user.email}")
+        logger.info("Quiz generated for %s with %s questions", current_user.email, quiz_data["totalQuestions"])
         return quiz_response
         
     except Exception as e:
-        print(f"Error generating quiz for user {current_user.email}: {str(e)}")
+        logger.exception("Quiz generation failed for %s", current_user.email)
         raise HTTPException(
             status_code=500, 
             detail="An internal error occurred while generating the quiz. Please try again."
@@ -187,7 +183,7 @@ async def chat_with_ai(
     """
     Chat with AI assistant using free APIs
     """
-    print(f"User {current_user.email} is chatting about: {request.topic}")
+    logger.info("User %s opened chat for topic=%s", current_user.email, request.topic)
     
     try:
         from ai_service import send_chat_message
@@ -200,7 +196,7 @@ async def chat_with_ai(
         return {"response": response}
         
     except Exception as e:
-        print(f"Chat error for user {current_user.email}: {str(e)}")
+        logger.exception("Chat error for %s", current_user.email)
         raise HTTPException(
             status_code=500, 
             detail="An internal error occurred while processing your message. Please try again."
@@ -213,10 +209,9 @@ async def get_user_analytics(
         current_user: schemas.UserPublic = Depends(auth.get_current_user)
 ):
     """
-    Get user analytics and performance data
+    Get user analytics and AI-powered recommendations
     """
-    # Enhanced analytics with real data
-    return {
+    analytics_payload = {
         "user_id": current_user.id,
         "period": f"last_{period}_days",
         "performance_trend": [65, 75, 80, 85, 78, 90, 95],
@@ -228,19 +223,21 @@ async def get_user_analytics(
         },
         "total_questions_attempted": 45,
         "average_score": 78.5,
-        "recommendations": [
-            "Focus on System Design concepts - your score is 15% below average",
-            "Great work on Python! Try more advanced concepts",
-            "Practice behavioral questions more consistently"
-        ],
         "generated_at": None
     }
+
+    ai_recommendations = await ai_service.generate_ai_recommendations(
+        topic_mastery=analytics_payload["topic_mastery"],
+        trend=analytics_payload["performance_trend"],
+        average_score=analytics_payload["average_score"],
+        user_name=current_user.name
+    )
+    analytics_payload["recommendations"] = ai_recommendations
+    return analytics_payload
 
 # Health check endpoint with API status
 @app.get("/health")
 def health_check():
-    from ai_service import free_ai_service
-    
     return {
         "status": "healthy", 
         "service": "AjiEasy API",
@@ -249,12 +246,6 @@ def health_check():
             "chat": settings.ENABLE_CHAT,
             "quiz": settings.ENABLE_QUIZ,
             "analytics": settings.ENABLE_ANALYTICS
-        },
-        "apis_configured": {
-            "gemini": bool(settings.GEMINI_API_KEY),
-            "deepseek": free_ai_service.deepseek_enabled,
-            "openrouter": free_ai_service.openrouter_enabled,
-            "groq": free_ai_service.groq_enabled
         }
     }
 

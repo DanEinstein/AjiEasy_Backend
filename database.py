@@ -17,21 +17,41 @@ from config import settings
 
 logger = logging.getLogger(__name__)
 
+
+def _build_engine():
+    """
+    Create a SQLAlchemy engine with environment-aware connection arguments.
+    Ensures local SQLite runs without SSL while production Postgres enforces it.
+    """
+    database_url = settings.DATABASE_URL
+
+    connect_args = {}
+    engine_kwargs = {
+        "pool_pre_ping": True,
+        "pool_recycle": 300,
+    }
+
+    if database_url.startswith("sqlite"):
+        # SQLite cannot accept sslmode; also allow multi-thread access for FastAPI
+        connect_args["check_same_thread"] = False
+        engine_kwargs.pop("pool_recycle")  # Not applicable to SQLite
+    elif database_url.startswith("postgresql"):
+        connect_args["sslmode"] = "require"
+
+    if connect_args:
+        engine_kwargs["connect_args"] = connect_args
+
+    engine = create_engine(database_url, **engine_kwargs)
+    logger.info("Configured SQLAlchemy engine for %s", "SQLite" if database_url.startswith("sqlite") else "PostgreSQL")
+    return engine
+
+
 class Database:
     """
     Database class encapsulates SQLAlchemy engine, session, and model definitions.
     """
     
-    # Use regular PostgreSQL driver (not asyncpg)
-    engine = create_engine(
-        settings.DATABASE_URL,  # Keep as postgresql:// not postgresql+asyncpg://
-        pool_pre_ping=True,
-        pool_recycle=300,
-        connect_args={
-            "sslmode": "require",  # Changed from "ssl" to "sslmode"
-        }
-    )
-    logger.info("Configured for PostgreSQL database with psycopg2")
+    engine = _build_engine()
     
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
