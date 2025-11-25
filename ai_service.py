@@ -19,6 +19,7 @@ def initialize_gemini():
 
         # Models to try in order of preference
         working_models = [
+            'models/gemini-2.5-flash',
             'models/gemini-2.0-flash',
             'models/gemini-1.5-flash',
             'models/gemini-pro'
@@ -180,16 +181,26 @@ Return ONLY a valid JSON array with this exact structure:
     }}
 ]"""
 
-        if self.groq_enabled:
-            print(f"🔄 Generating Questions with Groq for: {topic}")
+        if GEMINI_ENABLED:
+            print(f"🔄 Generating Questions with Gemini for: {topic}")
             try:
-                response = await self._call_groq_api(prompt, max_tokens=2000)
-                if response:
-                    json_match = re.search(r'\[\s*\{.*\}\s*\]', response, re.DOTALL)
+                response = await asyncio.to_thread(
+                    gemini_model.generate_content,
+                    prompt,
+                    generation_config=genai.types.GenerationConfig(
+                        temperature=0.7,
+                        max_output_tokens=2000,
+                    )
+                )
+
+                if response.text:
+                    # Clean up markdown code blocks if present
+                    clean_text = response.text.replace('```json', '').replace('```', '').strip()
+                    json_match = re.search(r'\[\s*\{.*\}\s*\]', clean_text, re.DOTALL)
                     if json_match:
                         return json.loads(json_match.group(0))
             except Exception as e:
-                print(f"❌ Groq Question Gen Error: {e}")
+                print(f"❌ Gemini Question Gen Error: {e}")
 
         # Fallback to local
         return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
