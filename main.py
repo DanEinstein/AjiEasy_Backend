@@ -66,6 +66,16 @@ app.add_middleware(
     expose_headers=["*"]
 )
 
+# Add middleware to explicitly set CORS headers on every response
+@app.middleware("http")
+async def add_cors_headers(request: Request, call_next):
+    response = await call_next(request)
+    response.headers["Access-Control-Allow-Origin"] = "*"
+    response.headers["Access-Control-Allow-Credentials"] = "true"
+    response.headers["Access-Control-Allow-Methods"] = "*"
+    response.headers["Access-Control-Allow-Headers"] = "*"
+    return response
+
 # Add explicit OPTIONS handler for preflight requests
 @app.options("/{path:path}")
 async def options_handler(path: str):
