@@ -56,7 +56,6 @@ class Database:
     SessionLocal = sessionmaker(autocommit=False, autoflush=False, bind=engine)
     Base = declarative_base()
 
-    # Your existing User and AiService classes remain the same
     class User(Base):
         __tablename__ = "users"
 
@@ -86,7 +85,6 @@ class Database:
         def __repr__(self):
             return f"AiService(id={self.id}, name={self.name}, is_active={self.is_active})"
 
-    # Your existing get_db, create_tables, test_connection, get_database_info methods remain the same
     @staticmethod
     def get_db():
         db = Database.SessionLocal()
@@ -116,7 +114,7 @@ class Database:
     def test_connection():
         try:
             with Database.engine.connect() as conn:
-                result = conn.execute("SELECT 1")
+                conn.execute("SELECT 1")
                 logger.info("Database connection test successful")
                 return True
         except Exception as e:
@@ -144,5 +142,30 @@ class Database:
         except Exception as e:
             logger.error(f"Error getting database info: {e}")
             return {"error": str(e)}
+
+
+# Backwards-compatible aliases for modules that import the previous API
+engine = Database.engine
+SessionLocal = Database.SessionLocal
+Base = Database.Base
+User = Database.User
+AiService = Database.AiService
+
+
+def get_db():
+    """Compatibility wrapper around Database.get_db."""
+    yield from Database.get_db()
+
+
+def create_tables():
+    Database.create_tables()
+
+
+def test_connection():
+    return Database.test_connection()
+
+
+def get_database_info():
+    return Database.get_database_info()
 
 logger.info("Database module initialized")

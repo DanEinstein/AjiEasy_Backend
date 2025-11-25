@@ -3,7 +3,6 @@ import json
 import re
 import aiohttp
 import asyncio
-import anyio
 from typing import Dict, Optional, List, Sequence
 import google.generativeai as genai
 from config import settings
@@ -85,11 +84,6 @@ def initialize_gemini():
 gemini_model, GEMINI_ENABLED = initialize_gemini()
 
 GROQ_ENDPOINT = "https://api.groq.com/openai/v1/chat/completions"
-DEFAULT_ANALYTICS_RECOMMENDATIONS = [
-    "Review your System Design fundamentals to close the current gap.",
-    "Double down on Python – you are trending upward, keep the momentum.",
-    "Schedule a behavioral mock interview to polish storytelling clarity."
-]
 
 
 def _extract_text_from_gemini(response) -> str:
@@ -113,27 +107,6 @@ def _extract_text_from_gemini(response) -> str:
         pass
 
     return ""
-
-
-async def _call_gemini(prompt: str, temperature: float = 0.7, max_output_tokens: int = 3000) -> str:
-    if not GEMINI_ENABLED or not gemini_model:
-        raise RuntimeError("Gemini is not configured")
-
-    def _generate():
-        return gemini_model.generate_content(
-            prompt,
-            generation_config=genai.types.GenerationConfig(
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-                top_p=0.8,
-            )
-        )
-
-    response = await anyio.to_thread.run_sync(_generate)
-    text = _extract_text_from_gemini(response)
-    if not text:
-        raise RuntimeError("Gemini returned an empty response")
-    return text
 
 
 async def _groq_completion(
@@ -176,26 +149,74 @@ def _extract_json_array(text: str) -> Optional[List[Dict]]:
         return None
 
 
-def _extract_generic_array(text: str) -> Optional[List]:
-    try:
-        parsed = json.loads(text)
-        if isinstance(parsed, list):
-            return parsed
-    except json.JSONDecodeError:
-        pass
-
-    match = re.search(r'\[\s*[\s\S]*\]', text)
-    if not match:
-        return None
-    try:
-        return json.loads(match.group(0))
-    except json.JSONDecodeError:
-        return None
-
 class FreeAIService:
     def __init__(self):
-        self.groq_enabled = bool(getattr(settings, 'GROQ_API_KEY', None))
-        print(f"✅ Groq availability: {self.groq_enabled}")
+        # API key validation
+        self.groq_api_key = getattr(settings, 'GROQ_API_KEY', None)
+        self.deepseek_enabled = bool(settings.DEEPSEEK_API_KEY)
+        self.openrouter_enabled = bool(settings.OPENROUTER_API_KEY)
+        self.groq_enabled = bool(self.groq_api_key and str(self.groq_api_key).strip())
+
+        print("=" * 60)
+        print("🔍 API KEY VALIDATION:")
+        print(f"   Groq Enabled: {self.groq_enabled}")
+        print(f"   DeepSeek Enabled: {self.deepseek_enabled}")
+        print(f"   OpenRouter Enabled: {self.openrouter_enabled}")
+        print(f"   Gemini Available: {GEMINI_ENABLED}")
+        print("=" * 60)
+
+    async def generate_topic_recommendations(self) -> List[Dict]:
+        """Generate trending interview topics for 2025 using Gemini"""
+        fallback_topics = [
+            {"topic": "AI Agents & LLMs", "trend": "High Demand", "icon": "fa-robot"},
+            {"topic": "Rust Programming", "trend": "Growing Fast", "icon": "fa-cogs"},
+            {"topic": "Cloud Security", "trend": "Critical", "icon": "fa-shield-alt"},
+            {"topic": "React Server Components", "trend": "Standard", "icon": "fa-code"},
+            {"topic": "System Design (Scalability)", "trend": "Evergreen", "icon": "fa-sitemap"}
+        ]
+
+        if not GEMINI_ENABLED or not gemini_model:
+            print("⚠️ Gemini unavailable, using fallback recommendations")
+            return fallback_topics
+
+        prompt = """Suggest 5 trending software engineering interview topics for 2025.
+Focus on emerging tech like AI, Edge Computing, etc.
+
+Return ONLY a valid JSON array with this structure:
+[
+    {
+        "topic": "Topic Name",
+        "trend": "Why it's trending (2-3 words)",
+        "icon": "FontAwesome class (e.g., fa-robot)"
+    }
+]"""
+
+        try:
+            print("🔮 Generating recommendations with Gemini...")
+            response = await asyncio.to_thread(
+                gemini_model.generate_content,
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=1000,
+                    response_mime_type="application/json"
+                )
+            )
+
+            if response.text:
+                try:
+                    return json.loads(response.text)
+                except json.JSONDecodeError:
+                    json_match = re.search(r'\[\s*\{.*\}\s*\]', response.text, re.DOTALL)
+                    if json_match:
+                        return json.loads(json_match.group(0))
+
+            print("❌ Failed to parse Gemini response")
+            return fallback_topics
+
+        except Exception as e:
+            print(f"❌ Gemini Recommendation Error: {e}")
+            return fallback_topics
         
     async def generate_quiz(
         self, 
@@ -611,35 +632,161 @@ class FreeAIService:
             "source": "local-enhanced"
         }
 
-    async def send_chat_message(self, topic: str, message: str) -> str:
+    async def generate_questions(
+        self,
+        topic: str,
+        job_description: str,
+        interview_type: str,
+        company_nature: str
+    ) -> List[Dict]:
+        """Generate interview questions using Gemini with local fallback."""
+        if not GEMINI_ENABLED or not gemini_model:
+            print("⚠️ Gemini unavailable, using local fallback for questions")
+            return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
+
+        prompt = f"""Generate 8 professional interview questions for:
+TOPIC: {topic}
+JOB ROLE: {job_description}
+INTERVIEW TYPE: {interview_type}
+COMPANY TYPE: {company_nature}
+
+Create a mix of:
+- 3 Technical questions
+- 3 Behavioral questions
+- 2 Situational questions
+
+Return ONLY a valid JSON array with this exact structure:
+[
+    {{
+        "question": "Question text?",
+        "type": "technical",
+        "difficulty": "medium",
+        "explanation": "Brief explanation of what this evaluates"
+    }}
+]"""
+
+        try:
+            print(f"🔄 Generating Questions with Gemini for: {topic}")
+            response = await asyncio.to_thread(
+                gemini_model.generate_content,
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=2000,
+                    response_mime_type="application/json"
+                )
+            )
+
+            if response.text:
+                clean_text = response.text.replace('```json', '').replace('```', '').strip()
+                try:
+                    questions = json.loads(clean_text)
+                except json.JSONDecodeError:
+                    json_match = re.search(r'\[\s*\{.*\}\s*\]', clean_text, re.DOTALL)
+                    if json_match:
+                        questions = json.loads(json_match.group(0))
+                    else:
+                        raise ValueError("No JSON array found in Gemini response")
+
+                print(f"✅ Successfully parsed {len(questions)} questions")
+                return questions
+        except Exception as e:
+            print(f"❌ Gemini Question Gen Error: {type(e).__name__}: {e}")
+
+        print("⚠️ Using local fallback for questions")
+        return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
+
+    async def generate_analytics(self, user_data: Dict) -> Dict:
+        """Generate analytics insights using Gemini with local fallback."""
+        if not GEMINI_ENABLED or not gemini_model:
+            print("⚠️ Gemini unavailable for analytics—using fallback")
+            return self._fallback_analytics()
+
+        prompt = f"""Analyze this user's interview preparation performance and provide insights:
+User Data: {json.dumps(user_data)}
+
+Return ONLY a valid JSON object with this structure:
+{{
+    "performance_trend": [65, 70, ...],
+    "topic_mastery": {{"Topic A": 80, "Topic B": 60}},
+    "average_score": 75,
+    "recommendations": ["Rec 1", "Rec 2", "Rec 3"],
+    "strength_areas": ["Area 1", "Area 2"],
+    "weakness_areas": ["Area 1", "Area 2"]
+}}"""
+
+        try:
+            response = await asyncio.to_thread(
+                gemini_model.generate_content,
+                prompt,
+                generation_config=genai.types.GenerationConfig(
+                    temperature=0.7,
+                    max_output_tokens=1000,
+                    response_mime_type="application/json"
+                )
+            )
+
+            if response.text:
+                clean_text = response.text.replace('```json', '').replace('```', '').strip()
+                try:
+                    return json.loads(clean_text)
+                except json.JSONDecodeError:
+                    json_match = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                    if json_match:
+                        return json.loads(json_match.group(0))
+        except Exception as e:
+            print(f"❌ Gemini Analytics Error: {e}")
+
+        return self._fallback_analytics()
+
+    def _fallback_analytics(self) -> Dict:
+        return {
+            "performance_trend": [60, 65, 70, 72, 75, 78, 80],
+            "topic_mastery": {"General": 70},
+            "average_score": 70,
+            "recommendations": [
+                "Keep practicing to improve your score.",
+                "Try different topics."
+            ],
+            "strength_areas": ["Consistency"],
+            "weakness_areas": ["Complex topics"]
+        }
+
+    async def send_chat_message(self, topic: str, message: str, history: Optional[List[Dict]] = None) -> str:
         """
-        Send chat message using Groq with a resilient local fallback.
+        Send chat message using Groq with OpenRouter and local fallback options.
         """
         if not settings.ENABLE_CHAT:
             return "Chat feature is currently disabled."
 
-        groq_prompt = [
-            {"role": "system", "content": "You are AjiEasy AI, an encouraging interview coach."},
-            {
-                "role": "user",
-                "content": (
-                    f"Topic: {topic}\n"
-                    f"Message: {message}\n\n"
-                    "Provide concise, structured advice (<400 words) that includes:\n"
-                    "- Targeted guidance for the topic\n"
-                    "- Actionable next steps\n"
-                    "- Encouraging tone\n"
-                )
-            }
-        ]
+        history = history or []
+        system_prompt = f"You are AjiEasy AI, an encouraging interview coach focused on {topic}."
+        messages = [{"role": "system", "content": system_prompt}]
+        for msg in history[-5:]:
+            messages.append({"role": msg["role"], "content": msg["content"]})
+        messages.append({
+            "role": "user",
+            "content": (
+                f"Topic: {topic}\n"
+                f"Message: {message}\n\n"
+                "Provide concise, structured advice (<400 words) that includes:\n"
+                "- Targeted guidance for the topic\n"
+                "- Actionable next steps\n"
+                "- Encouraging tone\n"
+            )
+        })
 
         if self.groq_enabled:
             try:
-                return await _groq_completion(groq_prompt, temperature=0.65, max_tokens=800)
+                return await _groq_completion(messages, temperature=0.65, max_tokens=800)
             except Exception as exc:
                 print(f"Groq chat error: {exc}")
 
-        # Fallback response if Groq fails or is disabled
+        if self.openrouter_enabled:
+            router_response = await self._generate_openrouter_chat(messages)
+            if router_response:
+                return router_response
+
         return f"""Hi! Let's work on your {topic} preparation.
 
 Key focus areas:
@@ -654,65 +801,50 @@ Next steps:
 
 You’ve got this — consistent practice will make the story flow naturally!"""
 
+    async def _generate_openrouter_chat(self, messages: List[Dict]) -> Optional[str]:
+        """Fallback chat using OpenRouter."""
+        try:
+            async with aiohttp.ClientSession() as session:
+                async with session.post(
+                    "https://openrouter.ai/api/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {settings.OPENROUTER_API_KEY}",
+                        "HTTP-Referer": settings.FRONTEND_URL,
+                    },
+                    json={
+                        "model": "mistralai/mistral-7b-instruct:free",
+                        "messages": messages,
+                        "temperature": 0.7,
+                        "max_tokens": 800
+                    },
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data["choices"][0]["message"]["content"]
+                    error_text = await response.text()
+                    print(f"OpenRouter Chat Error: {response.status} - {error_text}")
+        except Exception as e:
+            print(f"OpenRouter Chat Exception: {e}")
+        return None
+
 # Create a global instance
 free_ai_service = FreeAIService()
 
-# ==================== OPTIMIZED GEMINI 2.0 FLASH QUESTION GENERATION ====================
 async def generate_questions_async(
     topic: str,
     job_description: str,
     interview_type: str,
     company_nature: str
 ) -> List[Dict]:
-    """
-    Generate interview questions using Gemini 2.0 Flash
-    """
-    prompt = f"""
-    Generate 8 professional interview questions for:
-    TOPIC: {topic}
-    JOB ROLE: {job_description} 
-    INTERVIEW TYPE: {interview_type}
-    COMPANY TYPE: {company_nature}
-    
-    Create a mix of:
-    - 3 Technical questions (specific {topic} knowledge)
-    - 3 Behavioral questions (experience and soft skills)  
-    - 2 Situational questions (problem-solving scenarios)
-    
-    For each question, provide:
-    - question: The interview question text
-    - type: technical/behavioral/situational
-    - difficulty: easy/medium/hard
-    - explanation: Brief description of what this assesses
-    
-    Return ONLY a valid JSON array with this exact structure:
-    [
-        {{
-            "question": "Question text?",
-            "type": "technical",
-            "difficulty": "medium", 
-            "explanation": "What this question evaluates..."
-        }}
-    ]
-    
-    Make questions practical, job-relevant, and tailored to {company_nature} companies.
-    """
-
-    if not GEMINI_ENABLED:
-        print("⚠️ Gemini not available, using local fallback")
-        return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
-
-    try:
-        response_text = await _call_gemini(prompt, temperature=0.7, max_output_tokens=3000)
-        questions = _extract_json_array(response_text)
-        if questions:
-            print(f"✅ Generated {len(questions)} questions with Gemini 2.0 Flash")
-            return questions
-        print("❌ Gemini response missing JSON payload, falling back locally")
-    except Exception as exc:
-        print(f"❌ Gemini generation error: {exc}")
-
-    return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
+    """Convenience wrapper for the FreeAIService instance."""
+    return await free_ai_service.generate_questions(
+        topic=topic,
+        job_description=job_description,
+        interview_type=interview_type,
+        company_nature=company_nature
+    )
 
 async def generate_local_fallback_questions(topic: str, job_description: str, interview_type: str, company_nature: str) -> List[Dict]:
     """Enhanced local fallback question generator"""
@@ -766,40 +898,5 @@ async def generate_local_fallback_questions(topic: str, job_description: str, in
 async def generate_free_quiz(topic: str, difficulty: str = "medium", question_count: int = 10, focus_areas: str = "") -> Dict:
     return await free_ai_service.generate_quiz(topic, difficulty, question_count, focus_areas)
 
-async def send_chat_message(topic: str, message: str) -> str:
-    return await free_ai_service.send_chat_message(topic, message)
-
-
-async def generate_ai_recommendations(
-    topic_mastery: Dict[str, float],
-    trend: List[float],
-    average_score: float,
-    user_name: str
-) -> List[str]:
-    """
-    Produce personalized recommendations using Gemini based on analytics data.
-    """
-    if not GEMINI_ENABLED:
-        return DEFAULT_ANALYTICS_RECOMMENDATIONS
-
-    prompt = f"""
-    You are analyzing interview practice performance for {user_name}.
-    Topic mastery scores: {json.dumps(topic_mastery)}
-    Weekly trend: {trend}
-    Average score: {average_score}
-
-    Provide 3 concise, actionable recommendations tailored to the data above.
-    Respond as a JSON array of strings.
-    """
-
-    try:
-        response_text = await _call_gemini(prompt, temperature=0.4, max_output_tokens=400)
-        recommendations = _extract_generic_array(response_text)
-        if recommendations:
-            filtered = [item for item in recommendations if isinstance(item, str)]
-            if filtered:
-                return filtered[:3]
-    except Exception as exc:
-        print(f"Gemini analytics recommendation error: {exc}")
-
-    return DEFAULT_ANALYTICS_RECOMMENDATIONS
+async def send_chat_message(topic: str, message: str, history: List[Dict] = []) -> str:
+    return await free_ai_service.send_chat_message(topic, message, history)
