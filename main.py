@@ -1,130 +1,106 @@
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi import FastAPI, Depends, HTTPException, status
+from fastapi import FastAPI, HTTPException, Depends, BackgroundTasks, Request
 from fastapi.security import OAuth2PasswordRequestForm
 from sqlalchemy.orm import Session
-import os
+from typing import List, Optional
 import uvicorn
+import logging
+import time
+import os
 
-import auth
-import ai_service
-import schemas
-from database import Database
+from database import get_db, engine, Base, User, AiService
+from auth import (
+    Token, UserCreate, UserResponse,
+    authenticate_user, create_access_token,
+    get_current_user, get_password_hash,
+    ACCESS_TOKEN_EXPIRE_MINUTES
+)
+from ai_service import (
+    generate_questions_async,
+    generate_free_quiz,
+    send_chat_message,
+    free_ai_service # Import the service instance for analytics
+)
+from schemas import (
+    QuestionRequest, QuestionResponse,
+    QuizRequest, QuizResponse,
+    ChatRequest, ChatResponse,
+    AnalyticsResponse
+)
 from config import settings
 
-# Create database tables on startup
-Database.create_tables()
+# Configure logging
+logging.basicConfig(level=logging.INFO)
+logger = logging.getLogger(__name__)
+
+# Create database tables
+Base.metadata.create_all(bind=engine)
 
 app = FastAPI(
     title="AjiEasy API",
-    description="Backend API for AjiEasy Interview Preparation Platform",
-    version="1.0.0",
-    docs_url="/docs",
-    redoc_url="/redoc"
+    description="Backend for AjiEasy AI Interview Platform",
+    version="2.0.0"
 )
 
-# CORS middleware - UPDATED FOR PRODUCTION
+# CORS Configuration
+origins = [
+    "http://localhost:3000",
+    "http://127.0.0.1:3000",
+    "http://127.0.0.1:5500",
+    "https://ajieasy.vercel.app",
+    "https://ajieasy-frontend.onrender.com",
+    settings.FRONTEND_URL
+]
+
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=[
-        "http://localhost:3000",
-        "http://localhost:8080", 
-        "http://127.0.0.1:3000",
-        "http://127.0.0.1:8080",
-        "https://daneinstein.github.io",  # GitHub Pages
-        "https://*.github.io",            # All GitHub Pages subdomains
-        "https://aji-easy-frontend.vercel.app",     # Your Vercel domain
-        "https://*.vercel.app",           # All Vercel subdomains
-    ],
+    allow_origins=origins,
     allow_credentials=True,
-    allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
+    allow_methods=["*"],
     allow_headers=["*"],
 )
 
-# DB session dependency
-def get_db():
-    db = Database.SessionLocal()
-    try:
-        yield db
-    finally:
-        db.close()
+@app.get("/")
+async def root():
+    return {
+        "message": "Welcome to AjiEasy API",
+        "status": "online",
+        "version": "2.0.0",
+        "docs": "/docs"
+    }
 
-@app.post("/register/", response_model=schemas.UserPublic)
-def register_user(user: schemas.UserCreate, db: Session = Depends(get_db)):
-    db_user = auth.get_user_by_email(db, email=user.email)
+@app.get("/health")
+async def health_check():
+    return {"status": "healthy", "timestamp": time.time()}
+
+# Authentication Endpoints
+@app.post("/register/", response_model=UserResponse)
+async def register(user: UserCreate, db: Session = Depends(get_db)):
+    db_user = db.query(User).filter(User.email == user.email).first()
     if db_user:
         raise HTTPException(status_code=400, detail="Email already registered")
-    new_user = auth.create_user(
-        db_session=db,
-        name=user.name,
+
+    hashed_password = get_password_hash(user.password)
+    new_user = User(
         email=user.email,
-        password=user.password
+        name=user.name,
+        hashed_password=hashed_password
     )
+    db.add(new_user)
+    db.commit()
+    db.refresh(new_user)
     return new_user
 
-@app.post("/token", response_model=schemas.Token)
-def login_for_access_token(
-        form_data: OAuth2PasswordRequestForm = Depends(),
-        db: Session = Depends(get_db)
-):
-    user = auth.authenticate_user(db, email=form_data.username, password=form_data.password)
+@app.post("/token", response_model=Token)
+async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(), db: Session = Depends(get_db)):
+    user = authenticate_user(db, form_data.username, form_data.password)
     if not user:
         raise HTTPException(
-            status_code=status.HTTP_401_UNAUTHORIZED,
-            detail="Incorrect email or password",
+            status_code=401,
+            detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    access_token = auth.create_access_token(data={"sub": user.email})
-    return {"access_token": access_token, "token_type": "bearer"}
-
-@app.post("/services/", response_model=schemas.AiServicePublic)
-def add_new_service(
-        service: schemas.AiServiceCreate,
-        db: Session = Depends(get_db),
-        current_user: schemas.UserPublic = Depends(auth.get_current_user)
-):
-    db_service = auth.get_ai_service_by_name(db, name=service.name)
-    if db_service:
-        raise HTTPException(status_code=400, detail="Service with this name already exists")
-    return auth.create_ai_service(
-        db_session=db,
-        name=service.name,
-        description=service.description
-    )
-
-@app.post("/generate-questions/")
-async def generate_questions(
-        request: schemas.AiServiceRequest,
-        current_user: schemas.UserPublic = Depends(auth.get_current_user)
-):
-    """
-    Generate interview questions using AI
-    """
-    print(f"User {current_user.email} is requesting questions for topic: {request.topic}")
-    print(f"Job Description: {request.job_description}")
-    print(f"Interview Type: {request.interview_type}")
-    print(f"Company Nature: {request.company_nature}")
-    
-    try:
-        # Generate questions using the transformed ai_service (no DB dependency)
-        response = await ai_service.generate_questions_async(
-            topic=request.topic,
-            job_description=request.job_description,
-            interview_type=request.interview_type,
-            company_nature=request.company_nature
-        )
-        
-        # Handle error responses
-        if isinstance(response, dict) and "error" in response:
-            raise HTTPException(status_code=400, detail=response["error"])
-        
-        # Return the questions array directly (matching frontend expectation)
-        print(f"Successfully generated {len(response)} questions for user {current_user.email}")
-        return response
-        
-    except Exception as e:
-        print(f"Error generating questions for user {current_user.email}: {str(e)}")
-        raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail="An internal error occurred while generating questions. Please try again."
         )
 
@@ -143,21 +119,21 @@ async def generate_quiz(
     """
     print(f"User {current_user.email} is requesting quiz for topic: {request.topic}")
     print(f"Difficulty: {request.difficulty}, Questions: {request.question_count}")
-    
+
     try:
         # Use the free AI service for quiz generation
         from ai_service import generate_free_quiz
-        
+
         quiz_data = await generate_free_quiz(
             topic=request.topic,
             difficulty=request.difficulty,
             question_count=request.question_count,
             focus_areas=request.focus_areas or ""
         )
-        
+
         if "error" in quiz_data:
             raise HTTPException(status_code=400, detail=quiz_data["error"])
-        
+
         # Convert to the expected response format
         quiz_response = {
             "topic": quiz_data["topic"],
@@ -167,14 +143,14 @@ async def generate_quiz(
             "source": quiz_data.get("source", "ai"),
             "generated_at": None  # You can add timestamp if needed
         }
-        
+
         print(f"Successfully generated quiz with {quiz_data['totalQuestions']} questions for user {current_user.email}")
         return quiz_response
-        
+
     except Exception as e:
         print(f"Error generating quiz for user {current_user.email}: {str(e)}")
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail="An internal error occurred while generating the quiz. Please try again."
         )
 
@@ -188,21 +164,21 @@ async def chat_with_ai(
     Chat with AI assistant using free APIs
     """
     print(f"User {current_user.email} is chatting about: {request.topic}")
-    
+
     try:
         from ai_service import send_chat_message
-        
+
         response = await send_chat_message(
             topic=request.topic,
             message=request.message
         )
-        
+
         return {"response": response}
-        
+
     except Exception as e:
         print(f"Chat error for user {current_user.email}: {str(e)}")
         raise HTTPException(
-            status_code=500, 
+            status_code=500,
             detail="An internal error occurred while processing your message. Please try again."
         )
 
@@ -222,7 +198,7 @@ async def get_user_analytics(
         "performance_trend": [65, 75, 80, 85, 78, 90, 95],
         "topic_mastery": {
             "Python": 85,
-            "JavaScript": 78, 
+            "JavaScript": 78,
             "System Design": 65,
             "Behavioral": 88
         },
@@ -240,9 +216,9 @@ async def get_user_analytics(
 @app.get("/health")
 def health_check():
     from ai_service import free_ai_service
-    
+
     return {
-        "status": "healthy", 
+        "status": "healthy",
         "service": "AjiEasy API",
         "version": "1.0.0",
         "features": {
@@ -262,18 +238,22 @@ def health_check():
 @app.get("/")
 def read_root():
     return {
-        "message": "Welcome to AjiEasy API", 
+        "message": "Welcome to AjiEasy API",
         "version": "1.0.0",
         "docs": "/docs",
         "health": "/health"
     }
 
-# For production - Render will set PORT environment variable
+# Recommendations endpoint
+@app.get("/recommendations/")
+async def get_topic_recommendations(current_user: User = Depends(get_current_user)):
+    """Get trending interview topics for 2025 using Gemini"""
+    try:
+        recommendations = await free_ai_service.generate_topic_recommendations()
+        return {"recommendations": recommendations}
+    except Exception as e:
+        logger.error(f"Recommendations error: {e}")
+        raise HTTPException(status_code=500, detail=str(e))
+
 if __name__ == "__main__":
-    port = int(os.environ.get("PORT", 8000))
-    uvicorn.run(
-        "main:app", 
-        host="0.0.0.0", 
-        port=port, 
-        reload=False  # Disable reload in production
-    )
+    uvicorn.run("main:app", host="0.0.0.0", port=8000, reload=True)
