@@ -7,6 +7,7 @@ import uvicorn
 import logging
 import time
 import os
+from datetime import timedelta
 
 from database import get_db, engine, Base, User, AiService
 from auth import (
@@ -100,9 +101,11 @@ async def login_for_access_token(form_data: OAuth2PasswordRequestForm = Depends(
             detail="Incorrect username or password",
             headers={"WWW-Authenticate": "Bearer"},
         )
-            status_code=500,
-            detail="An internal error occurred while generating questions. Please try again."
-        )
+    access_token_expires = timedelta(minutes=ACCESS_TOKEN_EXPIRE_MINUTES)
+    access_token = create_access_token(
+        data={"sub": user.email}, expires_delta=access_token_expires
+    )
+    return {"access_token": access_token, "token_type": "bearer", "user": {"name": user.name, "email": user.email}}
 
 @app.get("/users/me", response_model=schemas.UserPublic)
 def read_users_me(current_user: schemas.UserPublic = Depends(auth.get_current_user)):
