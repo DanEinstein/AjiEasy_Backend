@@ -82,14 +82,9 @@ async def add_cors_headers(request: Request, call_next):
 async def options_handler(path: str):
     return {"message": "OK"}
 
-@app.get("/")
-async def root():
-    return {
-        "message": "Welcome to AjiEasy API",
-        "status": "online",
-        "version": "2.0.0",
-        "docs": "/docs"
-    }
+# Root endpoint is already defined at the bottom, removing this duplicate
+# @app.get("/")
+# async def root(): ...
 
 @app.get("/health")
 async def health_check():
