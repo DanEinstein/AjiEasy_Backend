@@ -44,23 +44,26 @@ app = FastAPI(
     version="2.0.0"
 )
 
-# CORS Configuration
+# CORS Configuration - Allow frontend origins
 origins = [
     "http://localhost:3000",
     "http://127.0.0.1:3000",
     "http://127.0.0.1:5500",
+    "http://localhost:5500",
     "https://ajieasy.vercel.app",
     "https://aji-easy-frontend.vercel.app",
     "https://ajieasy-frontend.onrender.com",
-    settings.FRONTEND_URL
+    "*"  # Temporary: Allow all origins for debugging
 ]
 
+# Add CORS middleware with permissive settings
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=origins,
+    allow_origins=["*"],  # Allow all origins temporarily
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    expose_headers=["*"]
 )
 
 @app.get("/")
