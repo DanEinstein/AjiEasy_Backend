@@ -402,31 +402,35 @@ Return ONLY a valid JSON object with this structure:
 
     async def _call_groq_api(self, prompt: str, max_tokens: int = 1000, json_mode: bool = False) -> Optional[str]:
         """Helper to call Groq API"""
-        async with aiohttp.ClientSession() as session:
-            payload = {
-                "model": "llama-3.1-70b-versatile",
-                "messages": [{"role": "user", "content": prompt}],
-                "temperature": 0.7,
-                "max_tokens": max_tokens
-            }
-            if json_mode:
-                payload["response_format"] = {"type": "json_object"}
+        try:
+            async with aiohttp.ClientSession() as session:
+                payload = {
+                    "model": "llama-3.1-70b-versatile",
+                    "messages": [{"role": "user", "content": prompt}],
+                    "temperature": 0.7,
+                    "max_tokens": max_tokens
+                }
+                if json_mode:
+                    payload["response_format"] = {"type": "json_object"}
 
-            async with session.post(
-                "https://api.groq.com/openai/v1/chat/completions",
-                headers={
-                    "Content-Type": "application/json",
-                    "Authorization": f"Bearer {self.groq_api_key}"
-                },
-                json=payload,
-                timeout=aiohttp.ClientTimeout(total=30)
-            ) as response:
-                if response.status == 200:
-                    data = await response.json()
-                    return data["choices"][0]["message"]["content"]
-                else:
-                    print(f"❌ Groq API Error: {response.status} - {await response.text()}")
-                    return None
+                async with session.post(
+                    "https://api.groq.com/openai/v1/chat/completions",
+                    headers={
+                        "Content-Type": "application/json",
+                        "Authorization": f"Bearer {self.groq_api_key}"
+                    },
+                    json=payload,
+                    timeout=aiohttp.ClientTimeout(total=30)
+                ) as response:
+                    if response.status == 200:
+                        data = await response.json()
+                        return data["choices"][0]["message"]["content"]
+                    else:
+                        print(f"❌ Groq API Error: {response.status} - {await response.text()}")
+                        return None
+        except Exception as e:
+            print(f"❌ Groq API Exception: {e}")
+            return None
 
     async def _generate_groq_quiz(self, topic: str, difficulty: str, question_count: int, focus_areas: str) -> Dict:
         prompt = f"""Create {question_count} multiple-choice interview questions about "{topic}" at {difficulty} difficulty level.
