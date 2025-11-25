@@ -144,22 +144,6 @@ class FavoritesResponse(BaseModel):
 
 # --- Token Schemas (for Login) ---
 
-class Token(BaseModel):
-    """The access token you send after a successful login."""
-    access_token: str
-    token_type: str
-    user: Optional[UserPublic] = None  # Include user data for immediate frontend use
-
-class TokenData(BaseModel):
-    """The data you'll store inside the JWT token."""
-    email: Optional[str] = None
-
-class ExportRequest(BaseModel):
-    """Request for exporting data"""
-    format: str = Field("pdf", description="Export format: pdf, json, csv")
-    content_type: str = Field("questions", description="Content type: questions, quiz, analytics")
-    data_ids: Optional[List[int]] = None
-
 class ExportResponse(BaseModel):
     """Export response with download URL"""
     download_url: str
