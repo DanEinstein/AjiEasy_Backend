@@ -396,16 +396,33 @@ Return ONLY a valid JSON array with this exact structure:
                 print(f"📝 Raw Response Length: {len(response.text)} chars")
                 clean_text = response.text.replace('```json', '').replace('```', '').strip()
                 try:
-                    questions = json.loads(clean_text)
+                    parsed_data = json.loads(clean_text)
                 except json.JSONDecodeError:
                     json_match = re.search(r'\[\s*\{.*\}\s*\]', clean_text, re.DOTALL)
                     if json_match:
-                        questions = json.loads(json_match.group(0))
+                        parsed_data = json.loads(json_match.group(0))
                     else:
-                        raise ValueError(f"No JSON array. First 200 chars: {clean_text[:200]}")
+                        # Try finding a JSON object if array search fails
+                        json_match_obj = re.search(r'\{.*\}', clean_text, re.DOTALL)
+                        if json_match_obj:
+                            parsed_data = json.loads(json_match_obj.group(0))
+                        else:
+                            raise ValueError(f"No JSON found. First 200 chars: {clean_text[:200]}")
 
-                print(f"✅ Successfully parsed {len(questions)} questions")
-                return questions
+                # Robustness: Handle {"questions": [...]} vs [...]
+                if isinstance(parsed_data, dict):
+                    if "questions" in parsed_data and isinstance(parsed_data["questions"], list):
+                        parsed_data = parsed_data["questions"]
+                    else:
+                        # If it's a single object, wrap it
+                        parsed_data = [parsed_data]
+
+                if not isinstance(parsed_data, list):
+                    print(f"❌ Unexpected JSON structure: {type(parsed_data)}")
+                    return await generate_local_fallback_questions(topic, job_description, interview_type, company_nature)
+
+                print(f"✅ Successfully parsed {len(parsed_data)} questions")
+                return parsed_data
         except Exception as e:
             print(f"❌ Gemini Question Gen Error: {type(e).__name__}: {e}")
 
